@@ -51,18 +51,18 @@ T *yoink(Array<T> &array)
 
 // STRING //
 
-typedef struct
+struct str
 {
     const char *first;
     int length;
-} str;
+};
 
 // ERROR HANDLING //
 bool error_has_occoured = false;
 
 // TOKENS //
 
-typedef enum
+enum Token_Kind
 {
     TOKEN_NULL,
 
@@ -83,14 +83,14 @@ typedef enum
 
     TOKEN_LINE,
     TOKEN_EOF,
-} Token_Kind;
+};
 
-typedef struct
+struct Token
 {
     Token_Kind kind;
     str string;
     int line;
-} Token;
+};
 
 Token null_token = {
     TOKEN_NULL,
@@ -100,7 +100,7 @@ Token null_token = {
 
 // LEXING //
 
-typedef struct
+struct Lexer
 {
     const char *src;
     const char *token_first;
@@ -108,7 +108,7 @@ typedef struct
     int current_line;
     Token current;
     Token next;
-} Lexer;
+};
 
 Lexer create_lexer(const char *src)
 {
@@ -286,23 +286,23 @@ void next_token(Lexer *lexer)
 
 // Expressions
 
-typedef struct
+struct UnresolvedId
 {
     Token identity;
-} UnresolvedId;
+};
 
-typedef struct
+struct ValueList
 {
     Array<int> values;
-} ValueList;
+};
 
-typedef enum
+enum ExprKind
 {
     EXPR_UNRESOLVED_ID,
     EXPR_VALUE_LIST,
-} ExprKind;
+};
 
-typedef struct
+struct Expression
 {
     ExprKind kind;
     union
@@ -310,7 +310,7 @@ typedef struct
         UnresolvedId *unresolved_id;
         ValueList *value_list;
     };
-} Expression;
+};
 
 void set_expression(Expression *expr, UnresolvedId *unresolved_id)
 {
@@ -326,20 +326,20 @@ void set_expression(Expression *expr, ValueList *value_list)
 
 // Statements
 
-typedef struct
+struct StmtInsert
 {
     Expression *subject;
     Expression *insert;
     bool insert_at_end;
-} StmtInsert;
+};
 
-typedef enum
+enum StmtKind
 {
     STMT_EXPR,
     STMT_INSERT,
-} StmtKind;
+};
 
-typedef struct
+struct Statement
 {
     StmtKind kind;
     union
@@ -347,7 +347,7 @@ typedef struct
         Expression *expr;
         StmtInsert *insert;
     };
-} Statement;
+};
 
 void set_statement(Statement *stmt, Expression *expr)
 {
@@ -363,19 +363,19 @@ void set_statement(Statement *stmt, StmtInsert *insert)
 
 // Program
 
-typedef struct sScope
+struct Scope
 {
-    sScope *parent;
+    Scope *parent;
     Array<Statement *> statements;
-} Scope;
+};
 
-typedef struct
+struct Function
 {
     Token identity;
     Scope *scope;
-} Function;
+};
 
-typedef struct
+struct Program
 {
     Array<UnresolvedId> unresolved_ids;
     Array<ValueList> value_lists;
@@ -384,15 +384,15 @@ typedef struct
     Array<Statement> statements;
     Array<Scope> scopes;
     Array<Function> functions;
-} Program;
+};
 
 // PARSING //
 
-typedef struct
+struct Parser
 {
     Lexer *lexer;
     Program program;
-} Parser;
+};
 
 Parser create_parser(Lexer *lexer)
 {
