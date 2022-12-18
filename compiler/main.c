@@ -218,28 +218,119 @@ void next_token(Lexer *lexer)
     make_token(lexer, TOKEN_EOF);
 }
 
+// PROGRAM MODEL //
+
+typedef struct
+{
+    Token identity;
+} Function;
+
+typedef struct
+{
+    Function functions[256];
+    int function_count;
+} Program;
+
+// PARSING //
+
+typedef struct
+{
+    Lexer *lexer;
+    Program program;
+} Parser;
+
+Parser create_parser(Lexer *lexer)
+{
+    Parser parser;
+    parser.lexer = lexer;
+    return parser;
+}
+
+void error(Parser *parser, const char *msg)
+{
+    if (error_has_occoured)
+        return;
+
+    printf("Error on line %d: %s\n", parser->lexer->current.line, msg);
+    error_has_occoured = true;
+}
+
+Token_Kind peek(Parser *parser)
+{
+    return parser->lexer->current.kind;
+}
+
+Token_Kind peek_next(Parser *parser)
+{
+    return parser->lexer->next.kind;
+}
+
+bool match(Parser *parser, Token_Kind kind)
+{
+    if (peek(parser) != kind)
+        return false;
+    next_token(parser->lexer);
+    return true;
+}
+
+Token eat(Parser *parser, Token_Kind kind, const char *msg)
+{
+    if (kind != TOKEN_LINE)
+    {
+        while (match(parser, TOKEN_LINE))
+            ;
+    }
+
+    Token t = parser->lexer->current;
+    if (!match(parser, kind))
+        error(parser, msg);
+    return t;
+}
+
+void parse_function(Parser *parser, Token identity)
+{
+    Function *funct = &parser->program.functions[parser->program.function_count];
+    parser->program.function_count++;
+
+    funct->identity = identity;
+
+    eat(parser, TOKEN_PAREN_L, "Expected '(' after function name.");
+    // FIXME: Parse function parameters
+    eat(parser, TOKEN_PAREN_R, "Expected ')' at end of function arguments.");
+
+    eat(parser, TOKEN_CURLY_L, "Expected '{' after function declaration.");
+    // FIXME: Parse function body
+    eat(parser, TOKEN_CURLY_R, "Expected '}' at end of function.");
+}
+
+void parse_program(Parser *parser)
+{
+    parser->program.function_count = 0;
+
+    while (peek(parser) == TOKEN_IDENTITY)
+    {
+        Token identity = eat(parser, TOKEN_IDENTITY, "Expected function or variable declaration.");
+        if (peek(parser) == TOKEN_PAREN_L)
+        {
+            parse_function(parser, identity);
+            continue;
+        }
+        error(parser, "Expected function or variable declaration.");
+    }
+}
+
 // COMPILE //
 
 int main()
 {
     const char *src = "main() {\n\tconsole << \"Hello\"\n}\0";
+
     Lexer lexer = create_lexer(src);
+    Parser parser = create_parser(&lexer);
 
     next_token(&lexer);
     next_token(&lexer);
-
-    while (lexer.current.kind != TOKEN_EOF)
-    {
-        char value[] = "";
-        if (lexer.current.kind != TOKEN_LINE)
-            strncat(value, lexer.current.string.first, lexer.current.string.length);
-
-        printf("%d %s\n", lexer.current.kind, value);
-
-        next_token(&lexer);
-        if (error_has_occoured)
-            break;
-    }
+    parse_program(&parser);
 
     return 0;
 }
