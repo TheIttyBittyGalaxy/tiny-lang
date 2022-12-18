@@ -1,0 +1,44 @@
+collect() {
+    list[]
+    loop {
+        console >> input
+        if (!input) break
+        list << input
+    }
+    return list
+}
+
+sum(list) {
+    result = 0
+    for (v; list) result += v
+    return result
+}
+
+mul(list) {
+    result = list[1]
+    for (i:v; list) {
+        if (i == 0) continue
+        result *= v
+    }
+    return result
+}
+
+double(list) {
+    return 2list
+}
+
+num_to_str(x) {
+    str[]
+    loop {
+        digit = x % 10
+        "0" + x >> str 
+        x /= 10
+        if (x == 0) return str
+    }
+}
+
+main() {
+    list[] = collect()
+    console << "Total: " << num_to_str(sum(list)) << "\n"
+    console << "Product: " << num_to_str(mul(list)) << "\n"
+}

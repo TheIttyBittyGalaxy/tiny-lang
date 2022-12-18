@@ -1,0 +1,11 @@
+reverse(list[]) {
+    reversed[]
+    for (i:v, list) v >> reversed
+    return reversed
+}
+
+main() {
+    console << "Input: "
+    console >> input
+    console << "Output: " . reverse(input)
+}
