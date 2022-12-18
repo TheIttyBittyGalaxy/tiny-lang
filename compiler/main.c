@@ -357,15 +357,116 @@ void next_token(Lexer *lexer)
 
 // PROGRAM MODEL //
 
-typedef struct
-{
-    Token identity;
-} Function;
+// Expressions
 
 typedef struct
 {
-    Function functions[256];
-    int function_count;
+    Token identity;
+} UnresolvedId;
+STRUCT_ARRAY(UnresolvedId);
+
+PRIMITIVE_ARRAY(int)
+
+typedef struct
+{
+    int_array values;
+} ValueList;
+STRUCT_ARRAY(ValueList);
+
+typedef enum
+{
+    EXPR_UNRESOLVED_ID,
+    EXPR_VALUE_LIST,
+} ExprKind;
+
+typedef struct
+{
+    ExprKind kind;
+    union
+    {
+        UnresolvedId *unresolved_id;
+        ValueList *value_list;
+    };
+} Expression;
+STRUCT_ARRAY(Expression);
+
+void set_expression(Expression *expr, UnresolvedId *unresolved_id)
+{
+    expr->unresolved_id = unresolved_id;
+    expr->kind = EXPR_UNRESOLVED_ID;
+}
+
+void set_expression(Expression *expr, ValueList *value_list)
+{
+    expr->value_list = value_list;
+    expr->kind = EXPR_VALUE_LIST;
+}
+
+// Statements
+
+typedef struct
+{
+    Expression *subject;
+    Expression *insert;
+    bool insert_at_end;
+} StmtInsert;
+STRUCT_ARRAY(StmtInsert);
+
+typedef enum
+{
+    STMT_EXPR,
+    STMT_INSERT,
+} StmtKind;
+
+typedef struct
+{
+    StmtKind kind;
+    union
+    {
+        Expression *expr;
+        StmtInsert *insert;
+    };
+} Statement;
+STRUCT_ARRAY(Statement);
+STRUCT_COLLECTION(Statement)
+
+void set_statement(Statement *stmt, Expression *expr)
+{
+    stmt->expr = expr;
+    stmt->kind = STMT_EXPR;
+}
+
+void set_statement(Statement *stmt, StmtInsert *insert)
+{
+    stmt->insert = insert;
+    stmt->kind = STMT_INSERT;
+}
+
+// Program
+
+typedef struct sScope
+{
+    sScope *parent;
+    StatementCollection statements;
+} Scope;
+STRUCT_ARRAY(Scope);
+
+typedef struct
+{
+    Token identity;
+    Scope *scope;
+} Function;
+STRUCT_ARRAY(Function)
+
+typedef struct
+{
+    UnresolvedIdArray unresolved_ids;
+    ValueListArray value_lists;
+    ExpressionArray expressions;
+    StmtInsertArray stmt_inserts;
+    StatementArray statements;
+    ScopeArray scopes;
+    FunctionArray functions;
 } Program;
 
 // PARSING //
@@ -436,25 +537,135 @@ Token eat(Parser *parser, Token_Kind kind, const char *msg)
     return t;
 }
 
+bool peek_expression(Parser *parser)
+{
+    return peek(parser) == TOKEN_IDENTITY ||
+           peek(parser) == TOKEN_STRING;
+}
+
+Expression *parse_expression(Parser *parser)
+{
+    Expression *expr = new_entry(&parser->program.expressions);
+
+    printf("PEEK EXPRESSION %0d\n", peek(parser));
+
+    if (peek(parser) == TOKEN_IDENTITY)
+    {
+        UnresolvedId *unresolved_id = new_entry(&parser->program.unresolved_ids);
+        unresolved_id->identity = eat(parser, TOKEN_IDENTITY, "Expected identity.");
+        set_expression(expr, unresolved_id);
+    }
+    else if (peek(parser) == TOKEN_STRING)
+    {
+        ValueList *value_list = new_entry(&parser->program.value_lists);
+
+        Token str = eat(parser, TOKEN_STRING, "Expected string.");
+        for (int i = 1; i <= str.string.length - 1; i++)
+            push(&value_list->values, (int)str.string.first[i]);
+
+        set_expression(expr, value_list);
+    }
+    else
+    {
+        error(parser, "Expected expression");
+    }
+
+    return expr;
+}
+
+bool peek_statement(Parser *parser)
+{
+    return peek_expression(parser);
+}
+
+void parse_statement(Parser *parser, Scope *scope)
+{
+    Statement *stmt = new_entry(&parser->program.statements);
+    Expression *expr = parse_expression(parser);
+
+    printf("PEEK STATEMENT INFIX %0d\n", peek(parser));
+
+    if (peek(parser) == TOKEN_INSERT_L || peek(parser) == TOKEN_CURLY_R)
+    {
+        printf("HELLO\n");
+        StmtInsert *insert = new_entry(&parser->program.stmt_inserts);
+        insert->subject = expr;
+
+        if (match(parser, TOKEN_INSERT_L))
+            insert->insert_at_end = true;
+        else if (match(parser, TOKEN_INSERT_R))
+            insert->insert_at_end = false;
+        else
+            error(parser, "Expected insertion operator.");
+
+        insert->insert = parse_expression(parser);
+        set_statement(stmt, insert);
+    }
+    else
+    {
+        set_statement(stmt, expr);
+    }
+
+    push(&scope->statements, stmt);
+}
+
+void parse_scope(Parser *parser, Scope *scope, Scope *parent)
+{
+    init(&scope->statements);
+    scope->parent = parent;
+
+    bool statement_block = match(parser, TOKEN_CURLY_L);
+
+    printf("STATEMENT BLOCK %s\n", statement_block ? "true" : "false");
+    if (statement_block)
+    {
+        while (match(parser, TOKEN_LINE))
+            ;
+        printf("PEEK STATEMENT %s\n", peek_statement(parser) ? "true" : "false");
+
+        while (peek_statement(parser))
+        {
+            parse_statement(parser, scope);
+            eat(parser, TOKEN_LINE, "Expected newline to terminate statement");
+            while (match(parser, TOKEN_LINE))
+                ;
+        }
+
+        // FIXME: Give the line number of the '{' we are trying to close
+        eat(parser, TOKEN_CURLY_R, "Expected '}' to close block.");
+    }
+    else if (peek_statement(parser))
+    {
+        parse_statement(parser, scope);
+    }
+    else
+    {
+        error(parser, "Expected '{' to begin statement block.");
+    }
+}
+
 void parse_function(Parser *parser, Token identity)
 {
-    Function *funct = &parser->program.functions[parser->program.function_count];
-    parser->program.function_count++;
-
+    Function *funct = new_entry(&parser->program.functions);
+    funct->scope = new_entry(&parser->program.scopes);
     funct->identity = identity;
 
     eat(parser, TOKEN_PAREN_L, "Expected '(' after function name.");
     // FIXME: Parse function parameters
     eat(parser, TOKEN_PAREN_R, "Expected ')' at end of function arguments.");
 
-    eat(parser, TOKEN_CURLY_L, "Expected '{' after function declaration.");
-    // FIXME: Parse function body
-    eat(parser, TOKEN_CURLY_R, "Expected '}' at end of function.");
+    parse_scope(parser, funct->scope, NULL);
 }
 
 void parse_program(Parser *parser)
 {
-    parser->program.function_count = 0;
+    init(&parser->program.unresolved_ids);
+    init(&parser->program.value_lists);
+    init(&parser->program.expressions);
+    init(&parser->program.stmt_inserts);
+    init(&parser->program.statements);
+    init(&parser->program.scopes);
+    init(&parser->program.functions);
 
     while (peek(parser) == TOKEN_IDENTITY)
     {
@@ -466,6 +677,8 @@ void parse_program(Parser *parser)
         }
         error(parser, "Expected function or variable declaration.");
     }
+
+    eat(parser, TOKEN_EOF, "Expected end of file");
 }
 
 // COMPILE //
