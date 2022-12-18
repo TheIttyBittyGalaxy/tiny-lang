@@ -128,6 +128,13 @@ void next_token(Lexer *lexer)
 {
     lexer->current = lexer->next;
 
+    char value[] = "";
+    if (lexer->current.kind == TOKEN_LINE)
+        strcat(value, "new line");
+    else
+        strncat(value, lexer->current.string.first, lexer->current.string.length);
+    printf("%02d %s\n", lexer->current.kind, value);
+
     if (lexer->next.kind == TOKEN_EOF || lexer->current.kind == TOKEN_EOF)
         return;
 
@@ -261,7 +268,13 @@ void error(Parser *parser, const char *msg)
     if (error_has_occoured)
         return;
 
-    printf("Error on line %d: %s\n", parser->lexer->current.line, msg);
+    Token current = parser->lexer->current;
+    char value[] = "";
+    if (current.kind == TOKEN_LINE)
+        strcat(value, "new line");
+    else
+        strncat(value, current.string.first, current.string.length);
+    printf("Error on line %d: %s (got %02d %s)\n", current.line, msg, current.kind, value);
     error_has_occoured = true;
 }
 
