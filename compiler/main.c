@@ -1,6 +1,126 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdbool.h>
 #include <cstring>
+
+// ARRAYS //
+
+void *allocate_array(void *pointer, size_t size)
+{
+    if (size == 0)
+    {
+        free(pointer);
+        return NULL;
+    }
+
+    void *result = realloc(pointer, size);
+    return result;
+}
+
+// Array of primitive values (e.g. `int`)
+#define PRIMITIVE_ARRAY(type)                                                     \
+    typedef struct                                                                \
+    {                                                                             \
+        type *value;                                                              \
+        size_t count;                                                             \
+        size_t capacity;                                                          \
+    } type##_array;                                                               \
+                                                                                  \
+    void init(type##_array *array)                                                \
+    {                                                                             \
+        array->value = NULL;                                                      \
+        array->count = 0;                                                         \
+        array->capacity = 0;                                                      \
+    }                                                                             \
+                                                                                  \
+    void push(type##_array *array, type value)                                    \
+    {                                                                             \
+        if (array->count >= array->capacity)                                      \
+        {                                                                         \
+            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;   \
+            array->value = (type *)allocate_array(array->value, array->capacity); \
+        }                                                                         \
+                                                                                  \
+        array->value[array->count] = value;                                       \
+        array->count++;                                                           \
+    }                                                                             \
+                                                                                  \
+    void clear(type##_array *array)                                               \
+    {                                                                             \
+        array->value = (type *)allocate_array(array->value, 0);                   \
+        array->count = 0;                                                         \
+        array->capacity = 0;                                                      \
+    }
+
+// Array of structs
+#define STRUCT_ARRAY(type)                                                        \
+    typedef struct                                                                \
+    {                                                                             \
+        type *value;                                                              \
+        size_t count;                                                             \
+        size_t capacity;                                                          \
+    } type##Array;                                                                \
+                                                                                  \
+    void init(type##Array *array)                                                 \
+    {                                                                             \
+        array->value = NULL;                                                      \
+        array->count = 0;                                                         \
+        array->capacity = 0;                                                      \
+    }                                                                             \
+                                                                                  \
+    type *new_entry(type##Array *array)                                           \
+    {                                                                             \
+        if (array->count >= array->capacity)                                      \
+        {                                                                         \
+            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;   \
+            array->value = (type *)allocate_array(array->value, array->capacity); \
+        }                                                                         \
+                                                                                  \
+        array->count++;                                                           \
+        return &array->value[array->count - 1];                                   \
+    }                                                                             \
+                                                                                  \
+    void clear(type##Array *array)                                                \
+    {                                                                             \
+        array->value = (type *)allocate_array(array->value, 0);                   \
+        array->count = 0;                                                         \
+        array->capacity = 0;                                                      \
+    }
+
+// Array of struct pointers
+#define STRUCT_COLLECTION(type)                                                    \
+    typedef struct                                                                 \
+    {                                                                              \
+        type **value;                                                              \
+        size_t count;                                                              \
+        size_t capacity;                                                           \
+    } type##Collection;                                                            \
+                                                                                   \
+    void init(type##Collection *array)                                             \
+    {                                                                              \
+        array->value = NULL;                                                       \
+        array->count = 0;                                                          \
+        array->capacity = 0;                                                       \
+    }                                                                              \
+                                                                                   \
+    void push(type##Collection *array, type *value)                                \
+    {                                                                              \
+        if (array->count >= array->capacity)                                       \
+        {                                                                          \
+            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;    \
+            array->value = (type **)allocate_array(array->value, array->capacity); \
+        }                                                                          \
+                                                                                   \
+        array->value[array->count - 1] = value;                                    \
+        array->count++;                                                            \
+    }                                                                              \
+                                                                                   \
+    void clear(type##Collection *array)                                            \
+    {                                                                              \
+        array->value = (type **)allocate_array(array->value, 0);                   \
+        array->count = 0;                                                          \
+        array->capacity = 0;                                                       \
+    }
 
 // STRING //
 
