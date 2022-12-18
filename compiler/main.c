@@ -207,7 +207,7 @@ void next_token(Lexer *lexer)
 
             char msg[] = "Unable to parse character '";
             strncat(msg, &c, 1);
-            strncat(msg, "'", 1);
+            strcat(msg, "'");
             error(lexer, msg);
             return;
         }
