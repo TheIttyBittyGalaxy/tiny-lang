@@ -17,6 +17,8 @@ bool error_has_occoured = false;
 
 typedef enum
 {
+    TOKEN_NULL,
+
     TOKEN_IDENTITY,
     TOKEN_CURLY_L,
     TOKEN_CURLY_R,
@@ -43,6 +45,12 @@ typedef struct
     int line;
 } Token;
 
+Token null_token = {
+    TOKEN_NULL,
+    {NULL, 0},
+    0,
+};
+
 // LEXING //
 
 typedef struct
@@ -62,6 +70,8 @@ Lexer create_lexer(const char *src)
     lexer.token_first = lexer.src;
     lexer.current_char = lexer.src;
     lexer.current_line = 1;
+    lexer.current = null_token;
+    lexer.next = null_token;
     return lexer;
 }
 
