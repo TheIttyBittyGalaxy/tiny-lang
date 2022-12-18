@@ -352,7 +352,7 @@ void parse_program(Parser *parser)
 
 int main()
 {
-    const char *src = "main() {\n\tconsole << \"Hello\"\n}\0";
+    char src[] = "main() {\n\tconsole << \"Hello\"\n}\0";
 
     Lexer lexer = create_lexer(src);
     Parser parser = create_parser(&lexer);
