@@ -79,9 +79,9 @@ void error(Lexer *lexer, const char *msg)
 {
     if (error_has_occoured)
         return;
+    error_has_occoured = true;
 
     printf("Error on line %d: %s\n", lexer->current_line, msg);
-    error_has_occoured = true;
 }
 
 char peek(Lexer *lexer)
@@ -267,15 +267,21 @@ void error(Parser *parser, const char *msg)
 {
     if (error_has_occoured)
         return;
+    error_has_occoured = true;
 
     Token current = parser->lexer->current;
-    char value[] = "";
-    if (current.kind == TOKEN_LINE)
-        strcat(value, "new line");
+    Token_Kind kind = parser->lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser->lexer->current.kind` isn't
+    printf("Error on line %d: %s", current.line, msg);
+    if (kind == TOKEN_LINE)
+    {
+        printf(" (got new line)\n");
+    }
     else
+    {
+        char value[] = "";
         strncat(value, current.string.first, current.string.length);
-    printf("Error on line %d: %s (got %02d %s)\n", current.line, msg, current.kind, value);
-    error_has_occoured = true;
+        printf(" (got %02d %s)\n", kind, value);
+    }
 }
 
 Token_Kind peek(Parser *parser)
