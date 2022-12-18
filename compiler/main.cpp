@@ -5,122 +5,49 @@
 
 // ARRAYS //
 
-void *allocate_array(void *pointer, size_t size)
+template <typename T>
+struct Array
 {
-    if (size == 0)
-    {
-        free(pointer);
-        return NULL;
-    }
+    T *value = nullptr;
+    size_t count = 0;
+    size_t capacity = 0;
+};
 
-    void *result = realloc(pointer, size);
-    return result;
+template <typename T>
+void clear(Array<T> &array)
+{
+    if (array.value == nullptr)
+        return;
+    free(array.value);
+    array.value = nullptr;
+    array.count = 0;
+    array.capacity = 0;
 }
 
-// Array of primitive values (e.g. `int`)
-#define PRIMITIVE_ARRAY(type)                                                     \
-    typedef struct                                                                \
-    {                                                                             \
-        type *value;                                                              \
-        size_t count;                                                             \
-        size_t capacity;                                                          \
-    } type##_array;                                                               \
-                                                                                  \
-    void init(type##_array *array)                                                \
-    {                                                                             \
-        array->value = NULL;                                                      \
-        array->count = 0;                                                         \
-        array->capacity = 0;                                                      \
-    }                                                                             \
-                                                                                  \
-    void push(type##_array *array, type value)                                    \
-    {                                                                             \
-        if (array->count >= array->capacity)                                      \
-        {                                                                         \
-            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;   \
-            array->value = (type *)allocate_array(array->value, array->capacity); \
-        }                                                                         \
-                                                                                  \
-        array->value[array->count] = value;                                       \
-        array->count++;                                                           \
-    }                                                                             \
-                                                                                  \
-    void clear(type##_array *array)                                               \
-    {                                                                             \
-        array->value = (type *)allocate_array(array->value, 0);                   \
-        array->count = 0;                                                         \
-        array->capacity = 0;                                                      \
-    }
+template <typename T>
+void allocate_enough_room(Array<T> &array)
+{
+    if (array.count < array.capacity)
+        return;
+    array.capacity = array.capacity == 0 ? 8 : array.capacity * 1.5;
+    array.value = (T *)realloc(array.value, array.capacity);
+}
 
-// Array of structs
-#define STRUCT_ARRAY(type)                                                        \
-    typedef struct                                                                \
-    {                                                                             \
-        type *value;                                                              \
-        size_t count;                                                             \
-        size_t capacity;                                                          \
-    } type##Array;                                                                \
-                                                                                  \
-    void init(type##Array *array)                                                 \
-    {                                                                             \
-        array->value = NULL;                                                      \
-        array->count = 0;                                                         \
-        array->capacity = 0;                                                      \
-    }                                                                             \
-                                                                                  \
-    type *new_entry(type##Array *array)                                           \
-    {                                                                             \
-        if (array->count >= array->capacity)                                      \
-        {                                                                         \
-            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;   \
-            array->value = (type *)allocate_array(array->value, array->capacity); \
-        }                                                                         \
-                                                                                  \
-        array->count++;                                                           \
-        return &array->value[array->count - 1];                                   \
-    }                                                                             \
-                                                                                  \
-    void clear(type##Array *array)                                                \
-    {                                                                             \
-        array->value = (type *)allocate_array(array->value, 0);                   \
-        array->count = 0;                                                         \
-        array->capacity = 0;                                                      \
-    }
+template <typename T>
+void append(Array<T> &array, T value)
+{
+    allocate_enough_room(array);
+    array.value[array.count] = value;
+    array.count++;
+}
 
-// Array of struct pointers
-#define STRUCT_COLLECTION(type)                                                    \
-    typedef struct                                                                 \
-    {                                                                              \
-        type **value;                                                              \
-        size_t count;                                                              \
-        size_t capacity;                                                           \
-    } type##Collection;                                                            \
-                                                                                   \
-    void init(type##Collection *array)                                             \
-    {                                                                              \
-        array->value = NULL;                                                       \
-        array->count = 0;                                                          \
-        array->capacity = 0;                                                       \
-    }                                                                              \
-                                                                                   \
-    void push(type##Collection *array, type *value)                                \
-    {                                                                              \
-        if (array->count >= array->capacity)                                       \
-        {                                                                          \
-            array->capacity = array->capacity == 0 ? 8 : array->capacity * 1.5;    \
-            array->value = (type **)allocate_array(array->value, array->capacity); \
-        }                                                                          \
-                                                                                   \
-        array->value[array->count - 1] = value;                                    \
-        array->count++;                                                            \
-    }                                                                              \
-                                                                                   \
-    void clear(type##Collection *array)                                            \
-    {                                                                              \
-        array->value = (type **)allocate_array(array->value, 0);                   \
-        array->count = 0;                                                          \
-        array->capacity = 0;                                                       \
-    }
+template <typename T>
+T *yoink(Array<T> &array)
+{
+    allocate_enough_room(array);
+    array.count++;
+    return &array.value[array.count - 1];
+}
 
 // STRING //
 
@@ -363,15 +290,11 @@ typedef struct
 {
     Token identity;
 } UnresolvedId;
-STRUCT_ARRAY(UnresolvedId);
-
-PRIMITIVE_ARRAY(int)
 
 typedef struct
 {
-    int_array values;
+    Array<int> values;
 } ValueList;
-STRUCT_ARRAY(ValueList);
 
 typedef enum
 {
@@ -388,7 +311,6 @@ typedef struct
         ValueList *value_list;
     };
 } Expression;
-STRUCT_ARRAY(Expression);
 
 void set_expression(Expression *expr, UnresolvedId *unresolved_id)
 {
@@ -410,7 +332,6 @@ typedef struct
     Expression *insert;
     bool insert_at_end;
 } StmtInsert;
-STRUCT_ARRAY(StmtInsert);
 
 typedef enum
 {
@@ -427,8 +348,6 @@ typedef struct
         StmtInsert *insert;
     };
 } Statement;
-STRUCT_ARRAY(Statement);
-STRUCT_COLLECTION(Statement)
 
 void set_statement(Statement *stmt, Expression *expr)
 {
@@ -447,26 +366,24 @@ void set_statement(Statement *stmt, StmtInsert *insert)
 typedef struct sScope
 {
     sScope *parent;
-    StatementCollection statements;
+    Array<Statement *> statements;
 } Scope;
-STRUCT_ARRAY(Scope);
 
 typedef struct
 {
     Token identity;
     Scope *scope;
 } Function;
-STRUCT_ARRAY(Function)
 
 typedef struct
 {
-    UnresolvedIdArray unresolved_ids;
-    ValueListArray value_lists;
-    ExpressionArray expressions;
-    StmtInsertArray stmt_inserts;
-    StatementArray statements;
-    ScopeArray scopes;
-    FunctionArray functions;
+    Array<UnresolvedId> unresolved_ids;
+    Array<ValueList> value_lists;
+    Array<Expression> expressions;
+    Array<StmtInsert> stmt_inserts;
+    Array<Statement> statements;
+    Array<Scope> scopes;
+    Array<Function> functions;
 } Program;
 
 // PARSING //
@@ -545,23 +462,23 @@ bool peek_expression(Parser *parser)
 
 Expression *parse_expression(Parser *parser)
 {
-    Expression *expr = new_entry(&parser->program.expressions);
+    Expression *expr = yoink(parser->program.expressions);
 
     printf("PEEK EXPRESSION %0d\n", peek(parser));
 
     if (peek(parser) == TOKEN_IDENTITY)
     {
-        UnresolvedId *unresolved_id = new_entry(&parser->program.unresolved_ids);
+        UnresolvedId *unresolved_id = yoink(parser->program.unresolved_ids);
         unresolved_id->identity = eat(parser, TOKEN_IDENTITY, "Expected identity.");
         set_expression(expr, unresolved_id);
     }
     else if (peek(parser) == TOKEN_STRING)
     {
-        ValueList *value_list = new_entry(&parser->program.value_lists);
+        ValueList *value_list = yoink(parser->program.value_lists);
 
         Token str = eat(parser, TOKEN_STRING, "Expected string.");
         for (int i = 1; i <= str.string.length - 1; i++)
-            push(&value_list->values, (int)str.string.first[i]);
+            append(value_list->values, (int)str.string.first[i]);
 
         set_expression(expr, value_list);
     }
@@ -580,7 +497,7 @@ bool peek_statement(Parser *parser)
 
 void parse_statement(Parser *parser, Scope *scope)
 {
-    Statement *stmt = new_entry(&parser->program.statements);
+    Statement *stmt = yoink(parser->program.statements);
     Expression *expr = parse_expression(parser);
 
     printf("PEEK STATEMENT INFIX %0d\n", peek(parser));
@@ -588,7 +505,7 @@ void parse_statement(Parser *parser, Scope *scope)
     if (peek(parser) == TOKEN_INSERT_L || peek(parser) == TOKEN_CURLY_R)
     {
         printf("HELLO\n");
-        StmtInsert *insert = new_entry(&parser->program.stmt_inserts);
+        StmtInsert *insert = yoink(parser->program.stmt_inserts);
         insert->subject = expr;
 
         if (match(parser, TOKEN_INSERT_L))
@@ -606,12 +523,11 @@ void parse_statement(Parser *parser, Scope *scope)
         set_statement(stmt, expr);
     }
 
-    push(&scope->statements, stmt);
+    append(scope->statements, stmt);
 }
 
 void parse_scope(Parser *parser, Scope *scope, Scope *parent)
 {
-    init(&scope->statements);
     scope->parent = parent;
 
     bool statement_block = match(parser, TOKEN_CURLY_L);
@@ -646,8 +562,8 @@ void parse_scope(Parser *parser, Scope *scope, Scope *parent)
 
 void parse_function(Parser *parser, Token identity)
 {
-    Function *funct = new_entry(&parser->program.functions);
-    funct->scope = new_entry(&parser->program.scopes);
+    Function *funct = yoink(parser->program.functions);
+    funct->scope = yoink(parser->program.scopes);
     funct->identity = identity;
 
     eat(parser, TOKEN_PAREN_L, "Expected '(' after function name.");
@@ -659,14 +575,6 @@ void parse_function(Parser *parser, Token identity)
 
 void parse_program(Parser *parser)
 {
-    init(&parser->program.unresolved_ids);
-    init(&parser->program.value_lists);
-    init(&parser->program.expressions);
-    init(&parser->program.stmt_inserts);
-    init(&parser->program.statements);
-    init(&parser->program.scopes);
-    init(&parser->program.functions);
-
     while (peek(parser) == TOKEN_IDENTITY)
     {
         Token identity = eat(parser, TOKEN_IDENTITY, "Expected function or variable declaration.");
