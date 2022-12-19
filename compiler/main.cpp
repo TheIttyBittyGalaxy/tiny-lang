@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <cstring>
+#include <string.h>
 
 // ARRAYS //
 
@@ -45,8 +46,12 @@ template <typename T>
 T *yoink(Array<T> &array)
 {
     allocate_enough_room(array);
+    T init;
     array.count++;
-    return &array.value[array.count - 1];
+    // FIXME: Using memcpy to initalise a blank version of the structure into memory was my attempt
+    //        at properly initalising that memory and avoid segmentation fault. Is this a valid way
+    //        of doing this, or can it be done better?
+    return (T *)memcpy(&array.value[array.count - 1], &init, sizeof(T));
 }
 
 // STRING //
