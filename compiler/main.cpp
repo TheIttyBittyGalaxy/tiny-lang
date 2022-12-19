@@ -87,9 +87,17 @@ enum class TOKEN
 
 struct Token
 {
-    TOKEN kind = TOKEN::NULL_TOKEN;
-    str string = {nullptr, 0};
-    int line = 0;
+    TOKEN kind;
+    str string;
+    int line;
+
+    Token() : kind(TOKEN::NULL_TOKEN),
+              string({nullptr, 0}),
+              line(0) {}
+
+    Token(TOKEN kind, str string, int line) : kind(kind),
+                                              string(string),
+                                              line(line) {}
 };
 
 // LEXING //
@@ -102,17 +110,12 @@ struct Lexer
     int current_line;
     Token current;
     Token next;
-};
 
-Lexer create_lexer(const char *src)
-{
-    Lexer lexer;
-    lexer.src = src;
-    lexer.token_first = lexer.src;
-    lexer.current_char = lexer.src;
-    lexer.current_line = 1;
-    return lexer;
-}
+    Lexer(const char *src) : src(src),
+                             token_first(src),
+                             current_char(src),
+                             current_line(1) {}
+};
 
 void error(const Lexer &lexer, const char *msg)
 {
@@ -384,14 +387,9 @@ struct Parser
 {
     Lexer *lexer;
     Program program;
-};
 
-Parser create_parser(Lexer &lexer)
-{
-    Parser parser;
-    parser.lexer = &lexer;
-    return parser;
-}
+    Parser(Lexer *lexer) : lexer(lexer) {}
+};
 
 void error(const Parser &parser, const char *msg)
 {
@@ -587,8 +585,8 @@ int main()
 {
     char src[] = "main() {\n\tconsole << \"Hello\"\n}\0";
 
-    Lexer lexer = create_lexer(src);
-    Parser parser = create_parser(lexer);
+    Lexer lexer(src);
+    Parser parser(&lexer);
 
     next_token(lexer);
     next_token(lexer);
