@@ -114,35 +114,35 @@ Lexer create_lexer(const char *src)
     return lexer;
 }
 
-void error(Lexer *lexer, const char *msg)
+void error(const Lexer &lexer, const char *msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
-    printf("Error on line %d: %s\n", lexer->current_line, msg);
+    printf("Error on line %d: %s\n", lexer.current_line, msg);
 }
 
-char peek(Lexer *lexer)
+char peek(const Lexer &lexer)
 {
-    return *lexer->current_char;
+    return *lexer.current_char;
 }
 
-char peek(Lexer *lexer, int ahead)
+char peek(const Lexer &lexer, const int ahead)
 {
-    return peek(lexer) == '\0' ? '\0' : *(lexer->current_char + ahead);
+    return peek(lexer) == '\0' ? '\0' : *(lexer.current_char + ahead);
 }
 
-char next(Lexer *lexer)
+char next(Lexer &lexer)
 {
     char c = peek(lexer);
-    lexer->current_char++;
+    lexer.current_char++;
     if (c == '\n')
-        lexer->current_line++;
+        lexer.current_line++;
     return c;
 }
 
-bool match(Lexer *lexer, char c)
+bool match(Lexer &lexer, const char c)
 {
     if (peek(lexer) != c)
         return false;
@@ -150,31 +150,31 @@ bool match(Lexer *lexer, char c)
     return true;
 }
 
-bool char_is_name(char c)
+bool char_is_name(const char c)
 {
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-void make_token(Lexer *lexer, TOKEN kind)
+void make_token(Lexer &lexer, const TOKEN kind)
 {
-    lexer->next.kind = kind;
-    lexer->next.string.first = lexer->token_first;
-    lexer->next.string.length = (int)(lexer->current_char - lexer->token_first);
-    lexer->next.line = kind != TOKEN::LINE ? lexer->current_line : lexer->current_line - 1;
+    lexer.next.kind = kind;
+    lexer.next.string.first = lexer.token_first;
+    lexer.next.string.length = (int)(lexer.current_char - lexer.token_first);
+    lexer.next.line = kind != TOKEN::LINE ? lexer.current_line : lexer.current_line - 1;
 }
 
-void next_token(Lexer *lexer)
+void next_token(Lexer &lexer)
 {
-    lexer->current = lexer->next;
+    lexer.current = lexer.next;
 
     char value[] = "";
-    if (lexer->current.kind == TOKEN::LINE)
+    if (lexer.current.kind == TOKEN::LINE)
         strcat(value, "new line");
     else
-        strncat(value, lexer->current.string.first, lexer->current.string.length);
-    printf("%02d %s\n", lexer->current.kind, value);
+        strncat(value, lexer.current.string.first, lexer.current.string.length);
+    printf("%02d %s\n", lexer.current.kind, value);
 
-    if (lexer->next.kind == TOKEN::END_OF_FILE || lexer->current.kind == TOKEN::END_OF_FILE)
+    if (lexer.next.kind == TOKEN::END_OF_FILE || lexer.current.kind == TOKEN::END_OF_FILE)
         return;
 
     while (peek(lexer) != '\0')
@@ -182,7 +182,7 @@ void next_token(Lexer *lexer)
         while (peek(lexer) == ' ' || peek(lexer) == '\t')
             next(lexer);
 
-        lexer->token_first = lexer->current_char;
+        lexer.token_first = lexer.current_char;
 
         char c = next(lexer);
         switch (c)
@@ -270,7 +270,7 @@ void next_token(Lexer *lexer)
         }
     }
 
-    lexer->token_first = lexer->current_char;
+    lexer.token_first = lexer.current_char;
     make_token(lexer, TOKEN::END_OF_FILE);
 }
 
@@ -386,21 +386,21 @@ struct Parser
     Program program;
 };
 
-Parser create_parser(Lexer *lexer)
+Parser create_parser(Lexer &lexer)
 {
     Parser parser;
-    parser.lexer = lexer;
+    parser.lexer = &lexer;
     return parser;
 }
 
-void error(Parser *parser, const char *msg)
+void error(const Parser &parser, const char *msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
-    Token current = parser->lexer->current;
-    TOKEN kind = parser->lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser->lexer->current.kind` isn't
+    Token current = parser.lexer->current;
+    TOKEN kind = parser.lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser.lexer->current.kind` isn't
     printf("Error on line %d: %s", current.line, msg);
     if (kind == TOKEN::LINE)
     {
@@ -414,25 +414,25 @@ void error(Parser *parser, const char *msg)
     }
 }
 
-TOKEN peek(Parser *parser)
+TOKEN peek(const Parser &parser)
 {
-    return parser->lexer->current.kind;
+    return parser.lexer->current.kind;
 }
 
-TOKEN peek_next(Parser *parser)
+TOKEN peek_next(const Parser &parser)
 {
-    return parser->lexer->next.kind;
+    return parser.lexer->next.kind;
 }
 
-bool match(Parser *parser, TOKEN kind)
+bool match(Parser &parser, TOKEN kind)
 {
     if (peek(parser) != kind)
         return false;
-    next_token(parser->lexer);
+    next_token(*parser.lexer);
     return true;
 }
 
-Token eat(Parser *parser, TOKEN kind, const char *msg)
+Token eat(Parser &parser, TOKEN kind, const char *msg)
 {
     if (kind != TOKEN::LINE)
     {
@@ -440,33 +440,33 @@ Token eat(Parser *parser, TOKEN kind, const char *msg)
             ;
     }
 
-    Token t = parser->lexer->current;
+    Token t = parser.lexer->current;
     if (!match(parser, kind))
         error(parser, msg);
     return t;
 }
 
-bool peek_expression(Parser *parser)
+bool peek_expression(const Parser &parser)
 {
     return peek(parser) == TOKEN::IDENTITY ||
            peek(parser) == TOKEN::STRING;
 }
 
-Expression *parse_expression(Parser *parser)
+Expression *parse_expression(Parser &parser)
 {
-    Expression *expr = yoink(parser->program.expressions);
+    Expression *expr = yoink(parser.program.expressions);
 
     printf("PEEK EXPRESSION %0d\n", peek(parser));
 
     if (peek(parser) == TOKEN::IDENTITY)
     {
-        UnresolvedId *unresolved_id = yoink(parser->program.unresolved_ids);
+        UnresolvedId *unresolved_id = yoink(parser.program.unresolved_ids);
         unresolved_id->identity = eat(parser, TOKEN::IDENTITY, "Expected identity.");
         set_expression(expr, unresolved_id);
     }
     else if (peek(parser) == TOKEN::STRING)
     {
-        ValueList *value_list = yoink(parser->program.value_lists);
+        ValueList *value_list = yoink(parser.program.value_lists);
 
         Token str = eat(parser, TOKEN::STRING, "Expected string.");
         for (int i = 1; i <= str.string.length - 1; i++)
@@ -482,14 +482,14 @@ Expression *parse_expression(Parser *parser)
     return expr;
 }
 
-bool peek_statement(Parser *parser)
+bool peek_statement(const Parser &parser)
 {
     return peek_expression(parser);
 }
 
-void parse_statement(Parser *parser, Scope *scope)
+void parse_statement(Parser &parser, Scope *scope)
 {
-    Statement *stmt = yoink(parser->program.statements);
+    Statement *stmt = yoink(parser.program.statements);
     Expression *expr = parse_expression(parser);
 
     printf("PEEK STATEMENT INFIX %0d\n", peek(parser));
@@ -497,7 +497,7 @@ void parse_statement(Parser *parser, Scope *scope)
     if (peek(parser) == TOKEN::INSERT_L || peek(parser) == TOKEN::CURLY_R)
     {
         printf("HELLO\n");
-        StmtInsert *insert = yoink(parser->program.stmt_inserts);
+        StmtInsert *insert = yoink(parser.program.stmt_inserts);
         insert->subject = expr;
 
         if (match(parser, TOKEN::INSERT_L))
@@ -518,7 +518,7 @@ void parse_statement(Parser *parser, Scope *scope)
     append(scope->statements, stmt);
 }
 
-void parse_scope(Parser *parser, Scope *scope, Scope *parent)
+void parse_scope(Parser &parser, Scope *scope, Scope *parent)
 {
     scope->parent = parent;
 
@@ -552,10 +552,10 @@ void parse_scope(Parser *parser, Scope *scope, Scope *parent)
     }
 }
 
-void parse_function(Parser *parser, Token identity)
+void parse_function(Parser &parser, Token identity)
 {
-    Function *funct = yoink(parser->program.functions);
-    funct->scope = yoink(parser->program.scopes);
+    Function *funct = yoink(parser.program.functions);
+    funct->scope = yoink(parser.program.scopes);
     funct->identity = identity;
 
     eat(parser, TOKEN::PAREN_L, "Expected '(' after function name.");
@@ -565,7 +565,7 @@ void parse_function(Parser *parser, Token identity)
     parse_scope(parser, funct->scope, NULL);
 }
 
-void parse_program(Parser *parser)
+void parse_program(Parser &parser)
 {
     while (peek(parser) == TOKEN::IDENTITY)
     {
@@ -588,11 +588,11 @@ int main()
     char src[] = "main() {\n\tconsole << \"Hello\"\n}\0";
 
     Lexer lexer = create_lexer(src);
-    Parser parser = create_parser(&lexer);
+    Parser parser = create_parser(lexer);
 
-    next_token(&lexer);
-    next_token(&lexer);
-    parse_program(&parser);
+    next_token(lexer);
+    next_token(lexer);
+    parse_program(parser);
 
     return 0;
 }
