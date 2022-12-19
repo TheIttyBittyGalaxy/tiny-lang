@@ -62,40 +62,34 @@ bool error_has_occoured = false;
 
 // TOKENS //
 
-enum Token_Kind
+enum class TOKEN
 {
-    TOKEN_NULL,
+    NULL_TOKEN,
 
-    TOKEN_IDENTITY,
-    TOKEN_CURLY_L,
-    TOKEN_CURLY_R,
-    TOKEN_PAREN_L,
-    TOKEN_PAREN_R,
+    IDENTITY,
+    CURLY_L,
+    CURLY_R,
+    PAREN_L,
+    PAREN_R,
 
-    TOKEN_STRING,
+    STRING,
 
-    TOKEN_INSERT_L,
-    TOKEN_INSERT_R,
-    TOKEN_LESS_THAN,
-    TOKEN_LESS_THAN_EQUAL,
-    TOKEN_GREATER_THAN,
-    TOKEN_GREATER_THAN_EQUAL,
+    INSERT_L,
+    INSERT_R,
+    LESS_THAN,
+    LESS_THAN_EQUAL,
+    GREATER_THAN,
+    GREATER_THAN_EQUAL,
 
-    TOKEN_LINE,
-    TOKEN_EOF,
+    LINE,
+    END_OF_FILE,
 };
 
 struct Token
 {
-    Token_Kind kind;
-    str string;
-    int line;
-};
-
-Token null_token = {
-    TOKEN_NULL,
-    {NULL, 0},
-    0,
+    TOKEN kind = TOKEN::NULL_TOKEN;
+    str string = {nullptr, 0};
+    int line = 0;
 };
 
 // LEXING //
@@ -117,8 +111,6 @@ Lexer create_lexer(const char *src)
     lexer.token_first = lexer.src;
     lexer.current_char = lexer.src;
     lexer.current_line = 1;
-    lexer.current = null_token;
-    lexer.next = null_token;
     return lexer;
 }
 
@@ -163,12 +155,12 @@ bool char_is_name(char c)
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
-void make_token(Lexer *lexer, Token_Kind kind)
+void make_token(Lexer *lexer, TOKEN kind)
 {
     lexer->next.kind = kind;
     lexer->next.string.first = lexer->token_first;
     lexer->next.string.length = (int)(lexer->current_char - lexer->token_first);
-    lexer->next.line = kind != TOKEN_LINE ? lexer->current_line : lexer->current_line - 1;
+    lexer->next.line = kind != TOKEN::LINE ? lexer->current_line : lexer->current_line - 1;
 }
 
 void next_token(Lexer *lexer)
@@ -176,13 +168,13 @@ void next_token(Lexer *lexer)
     lexer->current = lexer->next;
 
     char value[] = "";
-    if (lexer->current.kind == TOKEN_LINE)
+    if (lexer->current.kind == TOKEN::LINE)
         strcat(value, "new line");
     else
         strncat(value, lexer->current.string.first, lexer->current.string.length);
     printf("%02d %s\n", lexer->current.kind, value);
 
-    if (lexer->next.kind == TOKEN_EOF || lexer->current.kind == TOKEN_EOF)
+    if (lexer->next.kind == TOKEN::END_OF_FILE || lexer->current.kind == TOKEN::END_OF_FILE)
         return;
 
     while (peek(lexer) != '\0')
@@ -196,20 +188,20 @@ void next_token(Lexer *lexer)
         switch (c)
         {
         case '\n':
-            make_token(lexer, TOKEN_LINE);
+            make_token(lexer, TOKEN::LINE);
             return;
 
         case '(':
-            make_token(lexer, TOKEN_PAREN_L);
+            make_token(lexer, TOKEN::PAREN_L);
             return;
         case ')':
-            make_token(lexer, TOKEN_PAREN_R);
+            make_token(lexer, TOKEN::PAREN_R);
             return;
         case '{':
-            make_token(lexer, TOKEN_CURLY_L);
+            make_token(lexer, TOKEN::CURLY_L);
             return;
         case '}':
-            make_token(lexer, TOKEN_CURLY_R);
+            make_token(lexer, TOKEN::CURLY_R);
             return;
 
         case '<':
@@ -218,14 +210,14 @@ void next_token(Lexer *lexer)
             {
             case '<':
                 next(lexer);
-                make_token(lexer, TOKEN_INSERT_L);
+                make_token(lexer, TOKEN::INSERT_L);
                 return;
             case '=':
                 next(lexer);
-                make_token(lexer, TOKEN_LESS_THAN_EQUAL);
+                make_token(lexer, TOKEN::LESS_THAN_EQUAL);
                 return;
             }
-            make_token(lexer, TOKEN_LESS_THAN);
+            make_token(lexer, TOKEN::LESS_THAN);
             return;
         }
 
@@ -235,14 +227,14 @@ void next_token(Lexer *lexer)
             {
             case '>':
                 next(lexer);
-                make_token(lexer, TOKEN_INSERT_R);
+                make_token(lexer, TOKEN::INSERT_R);
                 return;
             case '=':
                 next(lexer);
-                make_token(lexer, TOKEN_GREATER_THAN_EQUAL);
+                make_token(lexer, TOKEN::GREATER_THAN_EQUAL);
                 return;
             }
-            make_token(lexer, TOKEN_GREATER_THAN);
+            make_token(lexer, TOKEN::GREATER_THAN);
             return;
         }
 
@@ -255,7 +247,7 @@ void next_token(Lexer *lexer)
                 if (n == '\0')
                     error(lexer, "Unterminated string at end of file");
             } while (n != '"');
-            make_token(lexer, TOKEN_STRING);
+            make_token(lexer, TOKEN::STRING);
             return;
         }
 
@@ -265,7 +257,7 @@ void next_token(Lexer *lexer)
             {
                 while (char_is_name(peek(lexer)))
                     next(lexer);
-                make_token(lexer, TOKEN_IDENTITY);
+                make_token(lexer, TOKEN::IDENTITY);
                 return;
             }
 
@@ -279,7 +271,7 @@ void next_token(Lexer *lexer)
     }
 
     lexer->token_first = lexer->current_char;
-    make_token(lexer, TOKEN_EOF);
+    make_token(lexer, TOKEN::END_OF_FILE);
 }
 
 // PROGRAM MODEL //
@@ -408,9 +400,9 @@ void error(Parser *parser, const char *msg)
     error_has_occoured = true;
 
     Token current = parser->lexer->current;
-    Token_Kind kind = parser->lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser->lexer->current.kind` isn't
+    TOKEN kind = parser->lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser->lexer->current.kind` isn't
     printf("Error on line %d: %s", current.line, msg);
-    if (kind == TOKEN_LINE)
+    if (kind == TOKEN::LINE)
     {
         printf(" (got new line)\n");
     }
@@ -422,17 +414,17 @@ void error(Parser *parser, const char *msg)
     }
 }
 
-Token_Kind peek(Parser *parser)
+TOKEN peek(Parser *parser)
 {
     return parser->lexer->current.kind;
 }
 
-Token_Kind peek_next(Parser *parser)
+TOKEN peek_next(Parser *parser)
 {
     return parser->lexer->next.kind;
 }
 
-bool match(Parser *parser, Token_Kind kind)
+bool match(Parser *parser, TOKEN kind)
 {
     if (peek(parser) != kind)
         return false;
@@ -440,11 +432,11 @@ bool match(Parser *parser, Token_Kind kind)
     return true;
 }
 
-Token eat(Parser *parser, Token_Kind kind, const char *msg)
+Token eat(Parser *parser, TOKEN kind, const char *msg)
 {
-    if (kind != TOKEN_LINE)
+    if (kind != TOKEN::LINE)
     {
-        while (match(parser, TOKEN_LINE))
+        while (match(parser, TOKEN::LINE))
             ;
     }
 
@@ -456,8 +448,8 @@ Token eat(Parser *parser, Token_Kind kind, const char *msg)
 
 bool peek_expression(Parser *parser)
 {
-    return peek(parser) == TOKEN_IDENTITY ||
-           peek(parser) == TOKEN_STRING;
+    return peek(parser) == TOKEN::IDENTITY ||
+           peek(parser) == TOKEN::STRING;
 }
 
 Expression *parse_expression(Parser *parser)
@@ -466,17 +458,17 @@ Expression *parse_expression(Parser *parser)
 
     printf("PEEK EXPRESSION %0d\n", peek(parser));
 
-    if (peek(parser) == TOKEN_IDENTITY)
+    if (peek(parser) == TOKEN::IDENTITY)
     {
         UnresolvedId *unresolved_id = yoink(parser->program.unresolved_ids);
-        unresolved_id->identity = eat(parser, TOKEN_IDENTITY, "Expected identity.");
+        unresolved_id->identity = eat(parser, TOKEN::IDENTITY, "Expected identity.");
         set_expression(expr, unresolved_id);
     }
-    else if (peek(parser) == TOKEN_STRING)
+    else if (peek(parser) == TOKEN::STRING)
     {
         ValueList *value_list = yoink(parser->program.value_lists);
 
-        Token str = eat(parser, TOKEN_STRING, "Expected string.");
+        Token str = eat(parser, TOKEN::STRING, "Expected string.");
         for (int i = 1; i <= str.string.length - 1; i++)
             append(value_list->values, (int)str.string.first[i]);
 
@@ -502,15 +494,15 @@ void parse_statement(Parser *parser, Scope *scope)
 
     printf("PEEK STATEMENT INFIX %0d\n", peek(parser));
 
-    if (peek(parser) == TOKEN_INSERT_L || peek(parser) == TOKEN_CURLY_R)
+    if (peek(parser) == TOKEN::INSERT_L || peek(parser) == TOKEN::CURLY_R)
     {
         printf("HELLO\n");
         StmtInsert *insert = yoink(parser->program.stmt_inserts);
         insert->subject = expr;
 
-        if (match(parser, TOKEN_INSERT_L))
+        if (match(parser, TOKEN::INSERT_L))
             insert->insert_at_end = true;
-        else if (match(parser, TOKEN_INSERT_R))
+        else if (match(parser, TOKEN::INSERT_R))
             insert->insert_at_end = false;
         else
             error(parser, "Expected insertion operator.");
@@ -530,25 +522,25 @@ void parse_scope(Parser *parser, Scope *scope, Scope *parent)
 {
     scope->parent = parent;
 
-    bool statement_block = match(parser, TOKEN_CURLY_L);
+    bool statement_block = match(parser, TOKEN::CURLY_L);
 
     printf("STATEMENT BLOCK %s\n", statement_block ? "true" : "false");
     if (statement_block)
     {
-        while (match(parser, TOKEN_LINE))
+        while (match(parser, TOKEN::LINE))
             ;
         printf("PEEK STATEMENT %s\n", peek_statement(parser) ? "true" : "false");
 
         while (peek_statement(parser))
         {
             parse_statement(parser, scope);
-            eat(parser, TOKEN_LINE, "Expected newline to terminate statement");
-            while (match(parser, TOKEN_LINE))
+            eat(parser, TOKEN::LINE, "Expected newline to terminate statement");
+            while (match(parser, TOKEN::LINE))
                 ;
         }
 
         // FIXME: Give the line number of the '{' we are trying to close
-        eat(parser, TOKEN_CURLY_R, "Expected '}' to close block.");
+        eat(parser, TOKEN::CURLY_R, "Expected '}' to close block.");
     }
     else if (peek_statement(parser))
     {
@@ -566,19 +558,19 @@ void parse_function(Parser *parser, Token identity)
     funct->scope = yoink(parser->program.scopes);
     funct->identity = identity;
 
-    eat(parser, TOKEN_PAREN_L, "Expected '(' after function name.");
+    eat(parser, TOKEN::PAREN_L, "Expected '(' after function name.");
     // FIXME: Parse function parameters
-    eat(parser, TOKEN_PAREN_R, "Expected ')' at end of function arguments.");
+    eat(parser, TOKEN::PAREN_R, "Expected ')' at end of function arguments.");
 
     parse_scope(parser, funct->scope, NULL);
 }
 
 void parse_program(Parser *parser)
 {
-    while (peek(parser) == TOKEN_IDENTITY)
+    while (peek(parser) == TOKEN::IDENTITY)
     {
-        Token identity = eat(parser, TOKEN_IDENTITY, "Expected function or variable declaration.");
-        if (peek(parser) == TOKEN_PAREN_L)
+        Token identity = eat(parser, TOKEN::IDENTITY, "Expected function or variable declaration.");
+        if (peek(parser) == TOKEN::PAREN_L)
         {
             parse_function(parser, identity);
             continue;
@@ -586,7 +578,7 @@ void parse_program(Parser *parser)
         error(parser, "Expected function or variable declaration.");
     }
 
-    eat(parser, TOKEN_EOF, "Expected end of file");
+    eat(parser, TOKEN::END_OF_FILE, "Expected end of file");
 }
 
 // COMPILE //
