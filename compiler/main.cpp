@@ -1,8 +1,10 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <stdbool.h>
-#include <cstring>
 #include <string.h>
+#include <string>
+#include <iomanip>
+#include <iostream>
+using std::cout;
+using std::endl;
+using std::string;
 
 // ARRAYS //
 
@@ -54,14 +56,6 @@ T *yoink(Array<T> &array)
     return (T *)memcpy(&array.value[array.count - 1], &init, sizeof(T));
 }
 
-// STRING //
-
-struct str
-{
-    const char *first;
-    int length;
-};
-
 // ERROR HANDLING //
 bool error_has_occoured = false;
 
@@ -93,15 +87,15 @@ enum class TokenKind
 struct Token
 {
     TokenKind kind;
-    str string;
+    string str;
     int line;
 
     Token() : kind(TokenKind::Null),
-              string({nullptr, 0}),
+              str(""),
               line(0) {}
 
-    Token(TokenKind kind, str string, int line) : kind(kind),
-                                                  string(string),
+    Token(TokenKind kind, string str, int line) : kind(kind),
+                                                  str(str),
                                                   line(line) {}
 };
 
@@ -109,42 +103,37 @@ struct Token
 
 struct Lexer
 {
-    const char *src;
-    const char *token_first;
-    const char *current_char;
+    string *src;
+    size_t token_pos;
+    size_t current_pos;
     int current_line;
     Token current;
     Token next;
 
-    Lexer(const char *src) : src(src),
-                             token_first(src),
-                             current_char(src),
-                             current_line(1) {}
+    Lexer(string *src) : src(src),
+                         token_pos(0),
+                         current_pos(0),
+                         current_line(1) {}
 };
 
-void error(const Lexer &lexer, const char *msg)
+void error(const Lexer &lexer, const string msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
-    printf("Error on line %d: %s\n", lexer.current_line, msg);
+    cout << "Error on line " << lexer.current_line << ": " << msg << endl;
 }
 
 char peek(const Lexer &lexer)
 {
-    return *lexer.current_char;
-}
-
-char peek(const Lexer &lexer, const int ahead)
-{
-    return peek(lexer) == '\0' ? '\0' : *(lexer.current_char + ahead);
+    return (*lexer.src)[lexer.current_pos];
 }
 
 char next(Lexer &lexer)
 {
     char c = peek(lexer);
-    lexer.current_char++;
+    lexer.current_pos++;
     if (c == '\n')
         lexer.current_line++;
     return c;
@@ -166,8 +155,8 @@ bool char_is_name(const char c)
 void make_token(Lexer &lexer, const TokenKind kind)
 {
     lexer.next.kind = kind;
-    lexer.next.string.first = lexer.token_first;
-    lexer.next.string.length = (int)(lexer.current_char - lexer.token_first);
+    size_t length = (lexer.current_pos - lexer.token_pos);
+    lexer.next.str = lexer.src->substr(lexer.token_pos, length);
     lexer.next.line = kind != TokenKind::Line ? lexer.current_line : lexer.current_line - 1;
 }
 
@@ -175,12 +164,12 @@ void next_token(Lexer &lexer)
 {
     lexer.current = lexer.next;
 
-    char value[] = "";
-    if (lexer.current.kind == TokenKind::Line)
-        strcat(value, "new line");
-    else
-        strncat(value, lexer.current.string.first, lexer.current.string.length);
-    printf("%02d %s\n", lexer.current.kind, value);
+    cout
+        << std::setfill('0') << std::setw(2) << (int)lexer.current.kind << " "
+        << ((lexer.current.kind == TokenKind::Line)
+                ? "new line"
+                : lexer.current.str)
+        << endl;
 
     if (lexer.next.kind == TokenKind::EndOfFile || lexer.current.kind == TokenKind::EndOfFile)
         return;
@@ -190,7 +179,7 @@ void next_token(Lexer &lexer)
         while (peek(lexer) == ' ' || peek(lexer) == '\t')
             next(lexer);
 
-        lexer.token_first = lexer.current_char;
+        lexer.token_pos = lexer.current_pos;
 
         char c = next(lexer);
         switch (c)
@@ -269,16 +258,13 @@ void next_token(Lexer &lexer)
                 return;
             }
 
-            char msg[] = "Unable to parse character '";
-            strncat(msg, &c, 1);
-            strcat(msg, "'");
-            error(lexer, msg);
+            error(lexer, "Unable to parse character '" + string(1, c) + "'");
             return;
         }
         }
     }
 
-    lexer.token_first = lexer.current_char;
+    lexer.token_pos = lexer.current_pos;
     make_token(lexer, TokenKind::EndOfFile);
 }
 
@@ -396,25 +382,19 @@ struct Parser
     Parser(Lexer *lexer) : lexer(lexer) {}
 };
 
-void error(const Parser &parser, const char *msg)
+void error(const Parser &parser, const string msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
     Token current = parser.lexer->current;
-    TokenKind kind = parser.lexer->current.kind; // FIXME: For whatever reason, the value of 'current.kind' is a nonsense value, even when `parser.lexer->current.kind` isn't
-    printf("Error on line %d: %s", current.line, msg);
-    if (kind == TokenKind::Line)
-    {
-        printf(" (got new line)\n");
-    }
+    cout << "Error on line " << current.line << ": " << msg;
+    if (current.kind == TokenKind::Line)
+        cout << " (got new line)";
     else
-    {
-        char value[] = "";
-        strncat(value, current.string.first, current.string.length);
-        printf(" (got %02d %s)\n", kind, value);
-    }
+        cout << " (got " << std::setfill('0') << std::setw(2) << (int)current.kind << " " << current.str << ")";
+    cout << endl;
 }
 
 TokenKind peek(const Parser &parser)
@@ -435,7 +415,7 @@ bool match(Parser &parser, TokenKind kind)
     return true;
 }
 
-Token eat(Parser &parser, TokenKind kind, const char *msg)
+Token eat(Parser &parser, TokenKind kind, const string msg)
 {
     if (kind != TokenKind::Line)
     {
@@ -459,8 +439,6 @@ Expression *parse_expression(Parser &parser)
 {
     Expression *expr = yoink(parser.program.expressions);
 
-    printf("PEEK EXPRESSION %0d\n", peek(parser));
-
     if (peek(parser) == TokenKind::Identity)
     {
         UnresolvedId *unresolved_id = yoink(parser.program.unresolved_ids);
@@ -471,9 +449,9 @@ Expression *parse_expression(Parser &parser)
     {
         ValueList *value_list = yoink(parser.program.value_lists);
 
-        Token str = eat(parser, TokenKind::STRING, "Expected string.");
-        for (int i = 1; i <= str.string.length - 1; i++)
-            append(value_list->values, (int)str.string.first[i]);
+        Token token = eat(parser, TokenKind::STRING, "Expected string.");
+        for (int i = 1; i <= token.str.length() - 1; i++)
+            append(value_list->values, (int)token.str[i]);
 
         set_expression(expr, value_list);
     }
@@ -495,11 +473,8 @@ void parse_statement(Parser &parser, Scope *scope)
     Statement *stmt = yoink(parser.program.statements);
     Expression *expr = parse_expression(parser);
 
-    printf("PEEK STATEMENT INFIX %0d\n", peek(parser));
-
     if (peek(parser) == TokenKind::InsertL || peek(parser) == TokenKind::CurlyR)
     {
-        printf("HELLO\n");
         StmtInsert *insert = yoink(parser.program.stmt_inserts);
         insert->subject = expr;
 
@@ -527,12 +502,10 @@ void parse_scope(Parser &parser, Scope *scope, Scope *parent)
 
     bool statement_block = match(parser, TokenKind::CurlyL);
 
-    printf("STATEMENT BLOCK %s\n", statement_block ? "true" : "false");
     if (statement_block)
     {
         while (match(parser, TokenKind::Line))
             ;
-        printf("PEEK STATEMENT %s\n", peek_statement(parser) ? "true" : "false");
 
         while (peek_statement(parser))
         {
@@ -588,14 +561,16 @@ void parse_program(Parser &parser)
 
 int main()
 {
-    char src[] = "main() {\n\tconsole << \"Hello\"\n}\0";
+    string src = "main() {\n\tconsole << \"Hello\"\n}";
 
-    Lexer lexer(src);
+    Lexer lexer(&src);
     Parser parser(&lexer);
 
     next_token(lexer);
     next_token(lexer);
     parse_program(parser);
+
+    cout << "FINISH" << endl;
 
     return 0;
 }
