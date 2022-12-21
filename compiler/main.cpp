@@ -693,11 +693,21 @@ void generate_program(Generator &generator)
 
 // COMPILE //
 
-int main()
+int main(int argc, char *argv[])
 {
-    string src = "main() {\n\tconsole << \"Hello\"\n}";
-    Program program;
+    string src_path = (argc == 2) ? ("../" + (string)argv[1]) : "../samples/hello.tiny";
 
+    std::ifstream src_file;
+    src_file.open(src_path, std::ios::in);
+    if (!src_file)
+    {
+        cout << "Source file " << src_path << " could not be loaded" << endl;
+        return 0;
+    }
+    std::string src((std::istreambuf_iterator<char>(src_file)), std::istreambuf_iterator<char>());
+    src_file.close();
+
+    Program program;
     Lexer lexer(&src);
     Parser parser(&lexer, &program);
     Generator generator(&program);
