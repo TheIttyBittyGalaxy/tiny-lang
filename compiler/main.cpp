@@ -351,7 +351,6 @@ struct Compiler
     size_t current_token = 0;
 
     stringstream *out = nullptr;
-    stringstream *out_statement_block = nullptr;
 
     bool insert_stmt = false;
     bool inserting_chars = false;
@@ -461,7 +460,6 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
         {
             dec = declare(scope, id, EntityKind::Variable);
             dec->variable.type = TinyType::Value;
-            *compiler.out_statement_block << "value " << dec->c_identity << ";";
         }
         else if (dec->kind == EntityKind::Function)
         {
@@ -653,9 +651,6 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
     if (dec->variable.type == TinyType::Unspecified)
         dec->variable.type = TinyType::Value;
 
-    if (!already_existed)
-        *compiler.out << (dec->variable.type == TinyType::Value ? "value " : "list ");
-
     *compiler.out << dec->c_identity;
 }
 
@@ -752,7 +747,11 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 
     Scope block_scope = Scope(&scope);
 
-    compiler.out_statement_block = compiler.out;
+    stringstream *parent_stream = compiler.out;
+    stringstream block_body;
+    stringstream block_declarations;
+    compiler.out = &block_body;
+
     while (peek_statement(compiler))
     {
         compile_statement(compiler, block_scope);
@@ -761,7 +760,22 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 
     if (compiler.in_main)
         *compiler.out << "return 0;";
-    compiler.out_statement_block = nullptr;
+
+    compiler.out = parent_stream;
+
+    for (auto &it : block_scope.entities)
+    {
+        Entity *var = &it.second;
+        if (var->kind == EntityKind::Variable)
+        {
+            *compiler.out
+                << (var->variable.type == TinyType::Value ? "value " : "list ")
+                << var->c_identity
+                << ";";
+        }
+    }
+
+    *compiler.out << block_body.rdbuf();
 
     eat(compiler, TokenKind::CurlyR, "Expected '}' to close block.");
     *compiler.out << '}';
@@ -770,18 +784,18 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 void compile_parameter(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected parameter name.").str;
-    Entity *var = declare(scope, id, EntityKind::Variable);
-    var->variable.type = TinyType::Value;
+    Entity *param = declare(scope, id, EntityKind::Variable);
+    param->variable.type = TinyType::Value;
 
     if (match(compiler, TokenKind::SquareL))
     {
         eat(compiler, TokenKind::SquareR, "Expected ']'");
-        var->variable.type = TinyType::List;
+        param->variable.type = TinyType::List;
     }
 
     *compiler.out
-        << (var->variable.type == TinyType::Value ? "value " : "list ")
-        << var->c_identity;
+        << (param->variable.type == TinyType::Value ? "value " : "list ")
+        << param->c_identity;
 }
 
 void compile_function(Compiler &compiler, Scope &scope)
@@ -789,6 +803,8 @@ void compile_function(Compiler &compiler, Scope &scope)
     stringstream *parent_stream = compiler.out;
     stringstream function_body;
     compiler.out = &function_body;
+
+    Scope function_scope;
 
     string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     compiler.in_main = identity == "main";
@@ -802,17 +818,17 @@ void compile_function(Compiler &compiler, Scope &scope)
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
     if (peek(compiler) == TokenKind::Identity)
     {
-        compile_parameter(compiler, scope);
+        compile_parameter(compiler, function_scope);
         while (match(compiler, TokenKind::Comma))
         {
             *compiler.out << ",";
-            compile_parameter(compiler, scope);
+            compile_parameter(compiler, function_scope);
         }
     }
     eat(compiler, TokenKind::ParenR, "Expected ')' at end of function parameters.");
 
     *compiler.out << ")";
-    compile_statement_block(compiler, scope);
+    compile_statement_block(compiler, function_scope);
 
     compiler.out = parent_stream;
 
