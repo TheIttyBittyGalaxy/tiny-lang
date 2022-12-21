@@ -229,6 +229,7 @@ struct Compiler
     size_t current_token = 0;
     bool insert_stmt = false;
     bool inserting_chars = false;
+    bool inserting_ltr = false;
     bool in_main = false;
 
     Compiler(Lexer *lexer) : lexer(lexer) {}
@@ -294,15 +295,15 @@ void compile_identity(Compiler &compiler)
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
     if (identity.str == "console")
     {
-        compiler.out << "std::cout";
+        compiler.out << (compiler.inserting_ltr ? "std::cin" : "std::cout");
 
         // FIXME: This should only occour if it happens in the first expression of the insert statement
-        if (compiler.insert_stmt)
+        if (!compiler.inserting_ltr)
             compiler.inserting_chars = true;
     }
     else
     {
-        cout << identity.str;
+        compiler.out << identity.str;
     }
 }
 
@@ -378,28 +379,55 @@ void compile_expression(Compiler &compiler)
     }
 }
 
-bool peek_insert_stmt(const Compiler &compiler)
+bool peek_token_in_statement(const Compiler &compiler, TokenKind kind)
 {
     TokenKind t;
     size_t i = 0;
     do
     {
         t = peek_ahead(compiler, i);
-
-        if (t == TokenKind::InsertL || t == TokenKind::InsertR)
-            return true;
-
-        if (t == TokenKind::Line)
+        if (t == TokenKind::Line || t == TokenKind::EndOfFile)
             return false;
-
         i++;
-    } while (t != TokenKind::EndOfFile);
-    return false;
+    } while (t != kind);
+    return true;
 }
 
-void compile_insert_stmt(Compiler &compiler)
+bool peek_ltr_insert_stmt(const Compiler &compiler)
+{
+    return peek_token_in_statement(compiler, TokenKind::InsertR);
+}
+
+bool peek_rtl_insert_stmt(const Compiler &compiler)
+{
+    return peek_token_in_statement(compiler, TokenKind::InsertL);
+}
+
+void compile_ltr_insert_stmt(Compiler &compiler)
 {
     compiler.insert_stmt = true;
+    compiler.inserting_ltr = true;
+    compiler.inserting_chars = false;
+    compile_expression(compiler);
+
+    eat(compiler, TokenKind::InsertR, "Expected >> operator.");
+    compiler.out << ">>";
+
+    compile_expression(compiler);
+
+    while (match(compiler, TokenKind::InsertR))
+    {
+        compiler.out << ">>";
+        compile_expression(compiler);
+    }
+
+    compiler.insert_stmt = false;
+}
+
+void compile_rtl_insert_stmt(Compiler &compiler)
+{
+    compiler.insert_stmt = true;
+    compiler.inserting_ltr = false;
     compiler.inserting_chars = false;
     compile_expression(compiler);
 
@@ -427,8 +455,10 @@ void compile_statement(Compiler &compiler)
     while (match(compiler, TokenKind::Line))
         ;
 
-    if (peek_insert_stmt(compiler))
-        compile_insert_stmt(compiler);
+    if (peek_ltr_insert_stmt(compiler))
+        compile_ltr_insert_stmt(compiler);
+    else if (peek_rtl_insert_stmt(compiler))
+        compile_rtl_insert_stmt(compiler);
     else
         compile_expression(compiler);
 
@@ -498,7 +528,7 @@ void compile_program(Compiler &compiler)
 
 int main(int argc, char *argv[])
 {
-    string src_path = (argc == 2) ? ("../" + (string)argv[1]) : "../samples/hello.tiny";
+    string src_path = (argc == 2) ? ("../" + (string)argv[1]) : "../samples/compiler-test.tiny";
 
     std::ifstream src_file;
     src_file.open(src_path, std::ios::in);

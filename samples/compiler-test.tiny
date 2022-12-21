@@ -1,0 +1,5 @@
+main() {
+    console << "Input: "
+    console >> input
+    console << "Output: " << input
+}
