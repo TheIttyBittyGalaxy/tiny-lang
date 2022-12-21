@@ -459,7 +459,6 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
         if (dec == nullptr)
         {
             dec = declare(scope, id, EntityKind::Variable);
-            dec->variable.type = TinyType::Value;
         }
         else if (dec->kind == EntityKind::Function)
         {
