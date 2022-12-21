@@ -474,7 +474,13 @@ void compile_function(Compiler &compiler)
 
 void compile_program(Compiler &compiler)
 {
-    compiler.out.open("local/output.cpp", std::ios::out);
+    string out_path = "local/output.cpp";
+    compiler.out.open(out_path, std::ios::out);
+    if (!compiler.out)
+    {
+        error(compiler, "Source file " + out_path + " could not be loaded");
+        return;
+    }
 
     compiler.out << "#include <iostream>\n";
     while (peek(compiler) == TokenKind::Identity)
