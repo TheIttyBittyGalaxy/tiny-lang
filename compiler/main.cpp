@@ -2,58 +2,36 @@
 #include <string>
 #include <iomanip>
 #include <iostream>
+#include <vector>
 using std::cout;
 using std::endl;
 using std::string;
+using std::vector;
 
-// ARRAYS //
+// VECTOR UTIL //
 
 template <typename T>
-struct Array
+struct ptr
 {
-    T *value = nullptr;
-    size_t count = 0;
-    size_t capacity = 0;
+private:
+    vector<T> *container = nullptr;
+    size_t index = 0;
+
+public:
+    ptr() : container(nullptr), index(0){};
+    ptr(vector<T> *container, size_t index) : container(container), index(index){};
+    T *operator->() { return container != nullptr ? (&this->container->at(index)) : nullptr; }
 };
 
 template <typename T>
-void clear(Array<T> &array)
-{
-    if (array.value == nullptr)
-        return;
-    free(array.value);
-    array.value = nullptr;
-    array.count = 0;
-    array.capacity = 0;
-}
+using list = vector<ptr<T>>;
 
 template <typename T>
-void allocate_enough_room(Array<T> &array)
+ptr<T> yoink(vector<T> *vec)
 {
-    if (array.count < array.capacity)
-        return;
-    array.capacity = array.capacity == 0 ? 8 : array.capacity * 1.5;
-    array.value = (T *)realloc(array.value, array.capacity);
-}
-
-template <typename T>
-void append(Array<T> &array, T value)
-{
-    allocate_enough_room(array);
-    array.value[array.count] = value;
-    array.count++;
-}
-
-template <typename T>
-T *yoink(Array<T> &array)
-{
-    allocate_enough_room(array);
-    T init;
-    array.count++;
-    // FIXME: Using memcpy to initalise a blank version of the structure into memory was my attempt
-    //        at properly initalising that memory and avoid segmentation fault. Is this a valid way
-    //        of doing this, or can it be done better?
-    return (T *)memcpy(&array.value[array.count - 1], &init, sizeof(T));
+    size_t index = vec->size();
+    vec->emplace_back();
+    return ptr<T>(vec, index);
 }
 
 // ERROR HANDLING //
@@ -279,11 +257,12 @@ struct UnresolvedId
 
 struct ValueList
 {
-    Array<int> values;
+    vector<int> values;
 };
 
 enum class ExprKind
 {
+    Null,
     UnresolvedId,
     ValueList,
 };
@@ -293,18 +272,19 @@ struct Expression
     ExprKind kind;
     union
     {
-        UnresolvedId *unresolved_id;
-        ValueList *value_list;
+        ptr<UnresolvedId> unresolved_id;
+        ptr<ValueList> value_list;
     };
+    Expression() : kind(ExprKind::Null), unresolved_id() {}
 };
 
-void set_expression(Expression *expr, UnresolvedId *unresolved_id)
+void set_expression(ptr<Expression> expr, ptr<UnresolvedId> unresolved_id)
 {
     expr->unresolved_id = unresolved_id;
     expr->kind = ExprKind::UnresolvedId;
 }
 
-void set_expression(Expression *expr, ValueList *value_list)
+void set_expression(ptr<Expression> expr, ptr<ValueList> value_list)
 {
     expr->value_list = value_list;
     expr->kind = ExprKind::ValueList;
@@ -314,13 +294,14 @@ void set_expression(Expression *expr, ValueList *value_list)
 
 struct StmtInsert
 {
-    Expression *subject;
-    Expression *insert;
+    ptr<Expression> subject;
+    ptr<Expression> insert;
     bool insert_at_end;
 };
 
 enum class StmtKind
 {
+    Null,
     Expression,
     Insert,
 };
@@ -330,18 +311,19 @@ struct Statement
     StmtKind kind;
     union
     {
-        Expression *expr;
-        StmtInsert *insert;
+        ptr<Expression> expr;
+        ptr<StmtInsert> insert;
     };
+    Statement() : kind(StmtKind::Null), expr() {}
 };
 
-void set_statement(Statement *stmt, Expression *expr)
+void set_statement(ptr<Statement> stmt, ptr<Expression> expr)
 {
     stmt->expr = expr;
     stmt->kind = StmtKind::Expression;
 }
 
-void set_statement(Statement *stmt, StmtInsert *insert)
+void set_statement(ptr<Statement> stmt, ptr<StmtInsert> insert)
 {
     stmt->insert = insert;
     stmt->kind = StmtKind::Insert;
@@ -351,25 +333,25 @@ void set_statement(Statement *stmt, StmtInsert *insert)
 
 struct Scope
 {
-    Scope *parent;
-    Array<Statement *> statements;
+    ptr<Scope> parent;
+    list<Statement> statements;
 };
 
 struct Function
 {
     Token identity;
-    Scope *scope;
+    ptr<Scope> scope;
 };
 
 struct Program
 {
-    Array<UnresolvedId> unresolved_ids;
-    Array<ValueList> value_lists;
-    Array<Expression> expressions;
-    Array<StmtInsert> stmt_inserts;
-    Array<Statement> statements;
-    Array<Scope> scopes;
-    Array<Function> functions;
+    vector<UnresolvedId> unresolved_ids;
+    vector<ValueList> value_lists;
+    vector<Expression> expressions;
+    vector<StmtInsert> stmt_inserts;
+    vector<Statement> statements;
+    vector<Scope> scopes;
+    vector<Function> functions;
 };
 
 // PARSING //
@@ -435,23 +417,23 @@ bool peek_expression(const Parser &parser)
            peek(parser) == TokenKind::STRING;
 }
 
-Expression *parse_expression(Parser &parser)
+ptr<Expression> parse_expression(Parser &parser)
 {
-    Expression *expr = yoink(parser.program.expressions);
+    ptr<Expression> expr = yoink(&parser.program.expressions);
 
     if (peek(parser) == TokenKind::Identity)
     {
-        UnresolvedId *unresolved_id = yoink(parser.program.unresolved_ids);
+        ptr<UnresolvedId> unresolved_id = yoink(&parser.program.unresolved_ids);
         unresolved_id->identity = eat(parser, TokenKind::Identity, "Expected identity.");
         set_expression(expr, unresolved_id);
     }
     else if (peek(parser) == TokenKind::STRING)
     {
-        ValueList *value_list = yoink(parser.program.value_lists);
+        ptr<ValueList> value_list = yoink(&parser.program.value_lists);
 
         Token token = eat(parser, TokenKind::STRING, "Expected string.");
         for (int i = 1; i <= token.str.length() - 1; i++)
-            append(value_list->values, (int)token.str[i]);
+            value_list->values.push_back((int)token.str[i]);
 
         set_expression(expr, value_list);
     }
@@ -468,14 +450,14 @@ bool peek_statement(const Parser &parser)
     return peek_expression(parser);
 }
 
-void parse_statement(Parser &parser, Scope *scope)
+void parse_statement(Parser &parser, ptr<Scope> scope)
 {
-    Statement *stmt = yoink(parser.program.statements);
-    Expression *expr = parse_expression(parser);
+    ptr<Statement> stmt = yoink(&parser.program.statements);
+    ptr<Expression> expr = parse_expression(parser);
 
     if (peek(parser) == TokenKind::InsertL || peek(parser) == TokenKind::CurlyR)
     {
-        StmtInsert *insert = yoink(parser.program.stmt_inserts);
+        ptr<StmtInsert> insert = yoink(&parser.program.stmt_inserts);
         insert->subject = expr;
 
         if (match(parser, TokenKind::InsertL))
@@ -493,10 +475,10 @@ void parse_statement(Parser &parser, Scope *scope)
         set_statement(stmt, expr);
     }
 
-    append(scope->statements, stmt);
+    scope->statements.push_back(stmt);
 }
 
-void parse_scope(Parser &parser, Scope *scope, Scope *parent)
+void parse_scope(Parser &parser, ptr<Scope> scope, ptr<Scope> parent)
 {
     scope->parent = parent;
 
@@ -530,15 +512,15 @@ void parse_scope(Parser &parser, Scope *scope, Scope *parent)
 
 void parse_function(Parser &parser, Token identity)
 {
-    Function *funct = yoink(parser.program.functions);
-    funct->scope = yoink(parser.program.scopes);
+    ptr<Function> funct = yoink(&parser.program.functions);
+    funct->scope = yoink(&parser.program.scopes);
     funct->identity = identity;
 
     eat(parser, TokenKind::ParenL, "Expected '(' after function name.");
     // FIXME: Parse function parameters
     eat(parser, TokenKind::ParenR, "Expected ')' at end of function arguments.");
 
-    parse_scope(parser, funct->scope, NULL);
+    parse_scope(parser, funct->scope, ptr<Scope>());
 }
 
 void parse_program(Parser &parser)
