@@ -3,6 +3,7 @@
 #include <iomanip>
 #include <iostream>
 #include <vector>
+#include <fstream>
 using std::cout;
 using std::endl;
 using std::string;
@@ -359,9 +360,9 @@ struct Program
 struct Parser
 {
     Lexer *lexer;
-    Program program;
+    Program *program;
 
-    Parser(Lexer *lexer) : lexer(lexer) {}
+    Parser(Lexer *lexer, Program *program) : lexer(lexer), program{program} {}
 };
 
 void error(const Parser &parser, const string msg)
@@ -419,20 +420,20 @@ bool peek_expression(const Parser &parser)
 
 ptr<Expression> parse_expression(Parser &parser)
 {
-    ptr<Expression> expr = yoink(&parser.program.expressions);
+    ptr<Expression> expr = yoink(&parser.program->expressions);
 
     if (peek(parser) == TokenKind::Identity)
     {
-        ptr<UnresolvedId> unresolved_id = yoink(&parser.program.unresolved_ids);
+        ptr<UnresolvedId> unresolved_id = yoink(&parser.program->unresolved_ids);
         unresolved_id->identity = eat(parser, TokenKind::Identity, "Expected identity.");
         set_expression(expr, unresolved_id);
     }
     else if (peek(parser) == TokenKind::STRING)
     {
-        ptr<ValueList> value_list = yoink(&parser.program.value_lists);
+        ptr<ValueList> value_list = yoink(&parser.program->value_lists);
 
         Token token = eat(parser, TokenKind::STRING, "Expected string.");
-        for (int i = 1; i <= token.str.length() - 1; i++)
+        for (int i = 1; i <= token.str.length() - 2; i++)
             value_list->values.push_back((int)token.str[i]);
 
         set_expression(expr, value_list);
@@ -452,12 +453,12 @@ bool peek_statement(const Parser &parser)
 
 void parse_statement(Parser &parser, ptr<Scope> scope)
 {
-    ptr<Statement> stmt = yoink(&parser.program.statements);
+    ptr<Statement> stmt = yoink(&parser.program->statements);
     ptr<Expression> expr = parse_expression(parser);
 
     if (peek(parser) == TokenKind::InsertL || peek(parser) == TokenKind::CurlyR)
     {
-        ptr<StmtInsert> insert = yoink(&parser.program.stmt_inserts);
+        ptr<StmtInsert> insert = yoink(&parser.program->stmt_inserts);
         insert->subject = expr;
 
         if (match(parser, TokenKind::InsertL))
@@ -512,8 +513,8 @@ void parse_scope(Parser &parser, ptr<Scope> scope, ptr<Scope> parent)
 
 void parse_function(Parser &parser, Token identity)
 {
-    ptr<Function> funct = yoink(&parser.program.functions);
-    funct->scope = yoink(&parser.program.scopes);
+    ptr<Function> funct = yoink(&parser.program->functions);
+    funct->scope = yoink(&parser.program->scopes);
     funct->identity = identity;
 
     eat(parser, TokenKind::ParenL, "Expected '(' after function name.");
@@ -539,18 +540,172 @@ void parse_program(Parser &parser)
     eat(parser, TokenKind::EndOfFile, "Expected end of file");
 }
 
+// GENERATE //
+
+struct Generator
+{
+    Program *program;
+    std::ofstream f;
+
+    bool insert_stmt = false;
+    bool inserting_chars = false;
+
+    Generator(Program *program) : program(program){};
+};
+
+// FIXME: We shouldn't actually be trying to generate unresolved ids. This is just a hack.
+void generate(Generator &generator, ptr<UnresolvedId> unresolved_id)
+{
+    if (unresolved_id->identity.str == "console")
+    {
+        generator.f << "std::cout";
+        if (generator.insert_stmt)
+            generator.inserting_chars = true;
+    }
+}
+
+void generate(Generator &generator, ptr<ValueList> value_list)
+{
+    if (generator.inserting_chars)
+    {
+        generator.f << '"';
+
+        // FIXME: Generate correct results for special characters (e.g. tabs should become '\t')
+        for (size_t i = 0; i < value_list->values.size(); i++)
+            generator.f << (char)value_list->values.at(i);
+
+        generator.f << '"';
+    }
+    else if (generator.insert_stmt)
+    {
+        for (size_t i = 0; i < value_list->values.size(); i++)
+        {
+            if (i > 0)
+                generator.f << "<<";
+            generator.f << value_list->values.at(i);
+        }
+    }
+    else
+    {
+        generator.f << '{';
+
+        for (size_t i = 0; i < value_list->values.size(); i++)
+        {
+            if (i > 0)
+                generator.f << ',';
+            generator.f << value_list->values.at(i);
+        }
+
+        generator.f << '}';
+    }
+}
+
+void generate(Generator &generator, ptr<Expression> expr)
+{
+    switch (expr->kind)
+    {
+    case ExprKind::UnresolvedId:
+        // FIXME: We shouldn't actually be trying to generate unresolved ids. This is just a hack.
+        generate(generator, expr->unresolved_id);
+        break;
+
+    case ExprKind::ValueList:
+        generate(generator, expr->value_list);
+        break;
+
+    default:
+        cout << "Error. Unable to generate statement";
+        error_has_occoured = true;
+        break;
+    }
+}
+
+void generate(Generator &generator, ptr<StmtInsert> insert)
+{
+    generator.insert_stmt = true;
+    generator.inserting_chars = false;
+
+    // FIXME: Generate correct code when we are inserting to the front of the subject
+    generate(generator, insert->subject);
+    generator.f << "<<";
+    generate(generator, insert->insert);
+
+    generator.insert_stmt = false;
+}
+
+void generate(Generator &generator, ptr<Statement> stmt)
+{
+    switch (stmt->kind)
+    {
+    case StmtKind::Expression:
+        generate(generator, stmt->expr);
+        break;
+
+    case StmtKind::Insert:
+        generate(generator, stmt->insert);
+        break;
+
+    default:
+        cout << "Error. Unable to generate statement";
+        error_has_occoured = true;
+        break;
+    }
+}
+
+void generate(Generator &generator, ptr<Scope> scope)
+{
+    for (size_t i = 0; i < scope->statements.size(); i++)
+    {
+        generate(generator, scope->statements.at(i));
+        generator.f << ";";
+    }
+}
+
+void generate(Generator &generator, ptr<Function> funct)
+{
+    generator.f
+        << (funct->identity.str == "main" ? "int " : "void ")
+        << funct->identity.str
+        << "(";
+
+    // TODO: Generate function arguments
+    generator.f << "){";
+
+    generate(generator, funct->scope);
+
+    if (funct->identity.str == "main")
+        generator.f << "return 0;";
+
+    generator.f << "}";
+}
+
+void generate_program(Generator &generator)
+{
+    generator.f.open("local/output.cpp", std::ios::out);
+
+    generator.f << "#include <iostream>\n";
+
+    for (size_t i = 0; i < generator.program->functions.size(); i++)
+        generate(generator, ptr<Function>(&generator.program->functions, i));
+
+    generator.f.close();
+}
+
 // COMPILE //
 
 int main()
 {
     string src = "main() {\n\tconsole << \"Hello\"\n}";
+    Program program;
 
     Lexer lexer(&src);
-    Parser parser(&lexer);
+    Parser parser(&lexer, &program);
+    Generator generator(&program);
 
     next_token(lexer);
     next_token(lexer);
     parse_program(parser);
+    generate_program(generator);
 
     cout << "FINISH" << endl;
 
