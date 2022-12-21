@@ -573,8 +573,14 @@ void compile_program(Compiler &compiler)
 
     Scope program_scope;
 
+    while (match(compiler, TokenKind::Line))
+        ;
     while (peek(compiler) == TokenKind::Identity)
+    {
         compile_function(compiler, program_scope);
+        while (match(compiler, TokenKind::Line))
+            ;
+    }
     eat(compiler, TokenKind::EndOfFile, "Expected end of file");
 
     string out_path = "local/output.cpp";
