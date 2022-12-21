@@ -28,6 +28,8 @@ enum class TokenKind
     ParenL,
     ParenR,
 
+    Comma,
+
     String,
 
     InsertL,
@@ -161,6 +163,10 @@ void next_token(Lexer &lexer)
         make_token(lexer, TokenKind::CurlyR);
         return;
 
+    case ',':
+        make_token(lexer, TokenKind::Comma);
+        return;
+
     case '<':
     {
         switch (peek(lexer))
@@ -226,9 +232,17 @@ void next_token(Lexer &lexer)
 
 // PROGRAM MODEL //
 
+enum class DeclarableKind
+{
+    Null,
+    Variable,
+    Function,
+};
+
 struct Declarable
 {
-    string identity;
+    DeclarableKind kind = DeclarableKind::Null;
+    string identity = "UNDEFINED";
 };
 
 struct Scope
@@ -252,10 +266,11 @@ Declarable *fetch(Scope *scope, string id)
     return nullptr;
 }
 
-void declare(Scope &scope, string id)
+void declare(Scope &scope, string id, DeclarableKind kind)
 {
     Declarable dec;
     dec.identity = id;
+    dec.kind = kind;
     scope.declarables[id] = dec;
 }
 
@@ -337,6 +352,20 @@ Token eat(Compiler &compiler, TokenKind kind, const string msg)
     return t;
 }
 
+bool peek_call(const Compiler &compiler)
+{
+    return peek(compiler) == TokenKind::Identity && peek_ahead(compiler, 1) == TokenKind::ParenL;
+}
+
+bool peek_expression(const Compiler &compiler)
+{
+    return peek_call(compiler) ||
+           peek(compiler) == TokenKind::String ||
+           peek(compiler) == TokenKind::Identity;
+}
+
+void compile_expression(Compiler &compiler, Scope &scope);
+
 void compile_identity(Compiler &compiler, Scope &scope)
 {
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
@@ -352,13 +381,46 @@ void compile_identity(Compiler &compiler, Scope &scope)
     {
         string id = identity.str;
         Declarable *dec = fetch(&scope, id);
+
         if (dec == nullptr)
         {
             *compiler.out_statement_block << "int " << id << ";";
-            declare(scope, id);
+            declare(scope, id, DeclarableKind::Variable);
         }
+        else if (dec->kind == DeclarableKind::Function)
+        {
+            error(compiler, "Cannot use function as an expression.");
+        }
+
         *compiler.out << id;
     }
+}
+
+void compile_call(Compiler &compiler, Scope &scope)
+{
+    string id = eat(compiler, TokenKind::Identity, "Expected function name.").str;
+    Declarable *funct = fetch(&scope, id);
+
+    if (funct == nullptr)
+        error(compiler, "Function '" + id + "' does not exist.");
+    else if (funct->kind != DeclarableKind::Function)
+        error(compiler, "'" + id + "' is not a function.");
+
+    eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
+    *compiler.out << id << "(";
+
+    if (peek_expression(compiler))
+    {
+        compile_expression(compiler, scope);
+        while (match(compiler, TokenKind::Comma))
+        {
+            *compiler.out << ",";
+            compile_expression(compiler, scope);
+        }
+    }
+
+    eat(compiler, TokenKind::ParenR, "Expected ')' after function arguments.");
+    *compiler.out << ")";
 }
 
 void compile_list_literal(Compiler &compiler)
@@ -409,28 +471,16 @@ void compile_list_literal(Compiler &compiler)
     }
 }
 
-bool peek_expression(const Compiler &compiler)
-{
-    return peek(compiler) == TokenKind::Identity ||
-           peek(compiler) == TokenKind::String;
-}
-
 void compile_expression(Compiler &compiler, Scope &scope)
 {
-    switch (peek(compiler))
-    {
-    case TokenKind::Identity:
-        compile_identity(compiler, scope);
-        break;
-
-    case TokenKind::String:
+    if (peek_call(compiler))
+        compile_call(compiler, scope);
+    else if (peek(compiler) == TokenKind::String)
         compile_list_literal(compiler);
-        break;
-
-    default:
+    else if (peek(compiler) == TokenKind::Identity)
+        compile_identity(compiler, scope);
+    else
         error(compiler, "Expected expression");
-        break;
-    }
 }
 
 bool peek_token_in_statement(const Compiler &compiler, TokenKind kind)
@@ -552,12 +602,14 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 
 void compile_function(Compiler &compiler, Scope &scope)
 {
-    Token identity = eat(compiler, TokenKind::Identity, "Expected function name.");
-    compiler.in_main = identity.str == "main";
+    string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
+    compiler.in_main = identity == "main";
+
+    declare(scope, identity, DeclarableKind::Function);
 
     *compiler.out
         << (compiler.in_main ? "int " : "void ")
-        << identity.str
+        << identity
         << "(";
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");

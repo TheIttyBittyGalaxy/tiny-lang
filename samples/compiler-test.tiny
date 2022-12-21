@@ -3,5 +3,5 @@ reverse() {}
 main() {
     console << "Input: "
     console >> input
-    console << "Output: " << reverse(input)
+    console << "Output: " << reverse(input, a)
 }
