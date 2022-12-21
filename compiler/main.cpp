@@ -42,6 +42,8 @@ enum class TokenKind
     GreaterThan,
     GreaterThanEqual,
 
+    Return,
+
     String,
     Identity,
 
@@ -107,6 +109,16 @@ bool match(Lexer &lexer, const char c)
         return false;
     next(lexer);
     return true;
+}
+
+// Assumes that the first character of the word has already been matched
+bool match_word(Lexer &lexer, string word)
+{
+    size_t len = word.length() - 1;
+    bool match = lexer.src->substr(lexer.position, len) == word.substr(1, len);
+    if (match)
+        lexer.position += len;
+    return match;
 }
 
 bool char_is_name(const char c)
@@ -231,6 +243,12 @@ void next_token(Lexer &lexer)
 
     default:
     {
+        if (match_word(lexer, "return"))
+        {
+            make_token(lexer, TokenKind::Return);
+            return;
+        }
+
         if (char_is_name(c))
         {
             while (char_is_name(peek(lexer)))
@@ -551,9 +569,15 @@ bool peek_rtl_insert_stmt(const Compiler &compiler)
     return peek_token_in_statement(compiler, TokenKind::InsertL);
 }
 
+bool peek_return_stmt(const Compiler &compiler)
+{
+    return peek(compiler) == TokenKind::Return;
+}
+
 bool peek_statement(const Compiler &compiler)
 {
-    return peek_expression(compiler);
+    return peek_expression(compiler) ||
+           peek_return_stmt(compiler);
 }
 
 void compile_assign_stmt(Compiler &compiler, Scope &scope)
@@ -637,6 +661,17 @@ void compile_rtl_insert_stmt(Compiler &compiler, Scope &scope)
     compiler.insert_stmt = false;
 }
 
+void compile_return_stmt(Compiler &compiler, Scope &scope)
+{
+    eat(compiler, TokenKind::Return, "Expected 'return'");
+    *compiler.out << "return";
+    if (peek_expression(compiler))
+    {
+        *compiler.out << " ";
+        compile_expression(compiler, scope);
+    }
+}
+
 void compile_statement(Compiler &compiler, Scope &scope)
 {
     skip_lines(compiler);
@@ -651,6 +686,8 @@ void compile_statement(Compiler &compiler, Scope &scope)
         compile_ltr_insert_stmt(compiler, scope);
     else if (peek_rtl_insert_stmt(compiler))
         compile_rtl_insert_stmt(compiler, scope);
+    else if (peek_return_stmt(compiler))
+        compile_return_stmt(compiler, scope);
     else
         compile_expression(compiler, scope);
 

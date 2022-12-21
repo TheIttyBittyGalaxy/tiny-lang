@@ -1,5 +1,6 @@
 reverse() {
     reversed[]
+    return reversed
 }
 
 main() {
