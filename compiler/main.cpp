@@ -765,13 +765,17 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
     for (auto &it : block_scope.entities)
     {
         Entity *var = &it.second;
-        if (var->kind == EntityKind::Variable)
-        {
-            *compiler.out
-                << (var->variable.type == TinyType::Value ? "value " : "list ")
-                << var->c_identity
-                << ";";
-        }
+        if (var->kind != EntityKind::Variable)
+            continue;
+
+        if (var->variable.type == TinyType::Unspecified)
+            var->variable.type = TinyType::Value;
+
+        *compiler.out
+            << tiny_type_as_c_type(var->variable.type)
+            << " "
+            << var->c_identity
+            << ";";
     }
 
     *compiler.out << block_body.rdbuf();
