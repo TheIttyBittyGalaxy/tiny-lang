@@ -4,9 +4,11 @@
 #include <iostream>
 #include <vector>
 #include <fstream>
+#include <sstream>
 using std::cout;
 using std::endl;
 using std::string;
+using std::stringstream;
 using std::vector;
 
 // ERROR HANDLING //
@@ -225,7 +227,7 @@ void next_token(Lexer &lexer)
 struct Compiler
 {
     Lexer *lexer;
-    std::ofstream out;
+    stringstream *out;
     size_t current_token = 0;
     bool insert_stmt = false;
     bool inserting_chars = false;
@@ -295,7 +297,7 @@ void compile_identity(Compiler &compiler)
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
     if (identity.str == "console")
     {
-        compiler.out << (compiler.inserting_ltr ? "std::cin" : "std::cout");
+        *compiler.out << (compiler.inserting_ltr ? "std::cin" : "std::cout");
 
         // FIXME: This should only occour if it happens in the first expression of the insert statement
         if (!compiler.inserting_ltr)
@@ -303,7 +305,7 @@ void compile_identity(Compiler &compiler)
     }
     else
     {
-        compiler.out << identity.str;
+        *compiler.out << identity.str;
     }
 }
 
@@ -323,35 +325,35 @@ void compile_list_literal(Compiler &compiler)
 
     if (compiler.inserting_chars)
     {
-        compiler.out << '"';
+        *compiler.out << '"';
 
         // FIXME: Generate correct results for special characters (e.g. tabs should become '\t')
         for (size_t i = 0; i < values.size(); i++)
-            compiler.out << (char)values.at(i);
+            *compiler.out << (char)values.at(i);
 
-        compiler.out << '"';
+        *compiler.out << '"';
     }
     else if (compiler.insert_stmt)
     {
         for (size_t i = 0; i < values.size(); i++)
         {
             if (i > 0)
-                compiler.out << "<<";
-            compiler.out << values.at(i);
+                *compiler.out << "<<";
+            *compiler.out << values.at(i);
         }
     }
     else
     {
-        compiler.out << '{';
+        *compiler.out << '{';
 
         for (size_t i = 0; i < values.size(); i++)
         {
             if (i > 0)
-                compiler.out << ',';
-            compiler.out << values.at(i);
+                *compiler.out << ',';
+            *compiler.out << values.at(i);
         }
 
-        compiler.out << '}';
+        *compiler.out << '}';
     }
 }
 
@@ -411,13 +413,13 @@ void compile_ltr_insert_stmt(Compiler &compiler)
     compile_expression(compiler);
 
     eat(compiler, TokenKind::InsertR, "Expected >> operator.");
-    compiler.out << ">>";
+    *compiler.out << ">>";
 
     compile_expression(compiler);
 
     while (match(compiler, TokenKind::InsertR))
     {
-        compiler.out << ">>";
+        *compiler.out << ">>";
         compile_expression(compiler);
     }
 
@@ -432,13 +434,13 @@ void compile_rtl_insert_stmt(Compiler &compiler)
     compile_expression(compiler);
 
     eat(compiler, TokenKind::InsertL, "Expected << operator.");
-    compiler.out << "<<";
+    *compiler.out << "<<";
 
     compile_expression(compiler);
 
     while (match(compiler, TokenKind::InsertL))
     {
-        compiler.out << "<<";
+        *compiler.out << "<<";
         compile_expression(compiler);
     }
 
@@ -469,7 +471,7 @@ void compile_statement_block(Compiler &compiler)
 {
     // FIXME: Give line numbers when eating '{' or '}' fails.
     eat(compiler, TokenKind::CurlyL, "Expected '{' to open block.");
-    compiler.out << '{';
+    *compiler.out << '{';
 
     while (match(compiler, TokenKind::Line))
         ;
@@ -477,14 +479,14 @@ void compile_statement_block(Compiler &compiler)
     while (peek_statement(compiler))
     {
         compile_statement(compiler);
-        compiler.out << ";";
+        *compiler.out << ";";
     }
 
     if (compiler.in_main)
-        compiler.out << "return 0;";
+        *compiler.out << "return 0;";
 
     eat(compiler, TokenKind::CurlyR, "Expected '}' to close block.");
-    compiler.out << '}';
+    *compiler.out << '}';
 }
 
 void compile_function(Compiler &compiler)
@@ -492,7 +494,7 @@ void compile_function(Compiler &compiler)
     Token identity = eat(compiler, TokenKind::Identity, "Expected function name.");
     compiler.in_main = identity.str == "main";
 
-    compiler.out
+    *compiler.out
         << (compiler.in_main ? "int " : "void ")
         << identity.str
         << "(";
@@ -501,27 +503,30 @@ void compile_function(Compiler &compiler)
     // TODO: Parse and generate function parameters
     eat(compiler, TokenKind::ParenR, "Expected ')' at end of function parameters.");
 
-    compiler.out << ")";
+    *compiler.out << ")";
     compile_statement_block(compiler);
     compiler.in_main = false;
 }
 
 void compile_program(Compiler &compiler)
 {
-    string out_path = "local/output.cpp";
-    compiler.out.open(out_path, std::ios::out);
-    if (!compiler.out)
-    {
-        error(compiler, "Source file " + out_path + " could not be loaded");
-        return;
-    }
-
-    compiler.out << "#include <iostream>\n";
+    stringstream program;
+    compiler.out = &program;
     while (peek(compiler) == TokenKind::Identity)
         compile_function(compiler);
-
     eat(compiler, TokenKind::EndOfFile, "Expected end of file");
-    compiler.out.close();
+
+    string out_path = "local/output.cpp";
+    std::ofstream out_file;
+    out_file.open(out_path, std::ios::out);
+    if (!out_file)
+    {
+        error(compiler, "Output file " + out_path + " could not be loaded");
+        return;
+    }
+    out_file << "#include <iostream>\n";
+    out_file << program.rdbuf();
+    out_file.close();
 }
 
 // MAIN //
