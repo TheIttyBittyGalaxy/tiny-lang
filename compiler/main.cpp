@@ -1,11 +1,11 @@
-#include <string.h>
-#include <string>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <vector>
-#include <fstream>
-#include <sstream>
 #include <map>
+#include <sstream>
+#include <string.h>
+#include <string>
+#include <vector>
 using std::cout;
 using std::endl;
 using std::map;
@@ -14,6 +14,7 @@ using std::stringstream;
 using std::vector;
 
 // ERROR HANDLING //
+
 bool error_has_occoured = false;
 
 // TOKENS //
@@ -22,27 +23,28 @@ enum class TokenKind
 {
     Null,
 
-    Identity,
-    SquareL,
-    SquareR,
-    CurlyL,
-    CurlyR,
-    ParenL,
-    ParenR,
-
     Comma,
     Assign,
+    Line,
 
-    String,
+    ParenL,
+    ParenR,
+    CurlyL,
+    CurlyR,
+    SquareL,
+    SquareR,
 
     InsertL,
     InsertR,
+
     LessThan,
     LessThanEqual,
     GreaterThan,
     GreaterThanEqual,
 
-    Line,
+    String,
+    Identity,
+
     EndOfFile,
 };
 
@@ -66,11 +68,12 @@ struct Token
 struct Lexer
 {
     string *src;
-    size_t token_pos = 0;
-    size_t current_pos = 0;
-    size_t current_line = 0;
-    bool finished = false;
     vector<Token> tokens;
+
+    bool finished = false;
+    size_t position = 0;
+    size_t line = 0;
+    size_t token_position = 0;
 
     Lexer(string *src) : src(src) {}
 };
@@ -81,20 +84,20 @@ void error(const Lexer &lexer, const string msg)
         return;
     error_has_occoured = true;
 
-    cout << "Error on line " << lexer.current_line << ": " << msg << endl;
+    cout << "Error on line " << lexer.line << ": " << msg << endl;
 }
 
 char peek(const Lexer &lexer)
 {
-    return (*lexer.src)[lexer.current_pos];
+    return (*lexer.src)[lexer.position];
 }
 
 char next(Lexer &lexer)
 {
     char c = peek(lexer);
-    lexer.current_pos++;
+    lexer.position++;
     if (c == '\n')
-        lexer.current_line++;
+        lexer.line++;
     return c;
 }
 
@@ -115,9 +118,9 @@ void make_token(Lexer &lexer, const TokenKind kind)
 {
     Token t;
     t.kind = kind;
-    size_t length = (lexer.current_pos - lexer.token_pos);
-    t.str = lexer.src->substr(lexer.token_pos, length);
-    t.line = kind != TokenKind::Line ? lexer.current_line : lexer.current_line - 1;
+    size_t length = (lexer.position - lexer.token_position);
+    t.str = lexer.src->substr(lexer.token_position, length);
+    t.line = kind != TokenKind::Line ? lexer.line : lexer.line - 1;
 
     lexer.tokens.push_back(t);
 
@@ -137,7 +140,7 @@ void next_token(Lexer &lexer)
     while (peek(lexer) == ' ' || peek(lexer) == '\t')
         next(lexer);
 
-    lexer.token_pos = lexer.current_pos;
+    lexer.token_position = lexer.position;
 
     if (peek(lexer) == '\0')
     {
@@ -149,16 +152,17 @@ void next_token(Lexer &lexer)
     char c = next(lexer);
     switch (c)
     {
+
+    case ',':
+        make_token(lexer, TokenKind::Comma);
+        return;
+    case '=':
+        make_token(lexer, TokenKind::Assign);
+        return;
     case '\n':
         make_token(lexer, TokenKind::Line);
         return;
 
-    case '[':
-        make_token(lexer, TokenKind::SquareL);
-        return;
-    case ']':
-        make_token(lexer, TokenKind::SquareR);
-        return;
     case '(':
         make_token(lexer, TokenKind::ParenL);
         return;
@@ -171,13 +175,11 @@ void next_token(Lexer &lexer)
     case '}':
         make_token(lexer, TokenKind::CurlyR);
         return;
-
-    case ',':
-        make_token(lexer, TokenKind::Comma);
+    case '[':
+        make_token(lexer, TokenKind::SquareL);
         return;
-
-    case '=':
-        make_token(lexer, TokenKind::Assign);
+    case ']':
+        make_token(lexer, TokenKind::SquareR);
         return;
 
     case '<':
@@ -252,7 +254,7 @@ enum class TinyType
     List,
 };
 
-enum class DeclarableKind
+enum class EntityKind
 {
     Null,
     Variable,
@@ -260,9 +262,9 @@ enum class DeclarableKind
 };
 
 // TODO: Could 'kind' and 'type' potentially be collapsed all into one thing?
-struct Declarable
+struct Entity
 {
-    DeclarableKind kind = DeclarableKind::Null;
+    EntityKind kind = EntityKind::Null;
     string identity = "UNDEFINED";
     union
     {
@@ -275,17 +277,17 @@ struct Declarable
 
 struct Scope
 {
-    std::map<string, Declarable> declarables;
+    std::map<string, Entity> entities;
     Scope *parent = nullptr;
 
     Scope(){};
     Scope(Scope *parent) : parent(parent){};
 };
 
-Declarable *fetch(Scope *scope, string id)
+Entity *fetch(Scope *scope, string id)
 {
-    auto got = scope->declarables.find(id);
-    if (got != scope->declarables.end())
+    auto got = scope->entities.find(id);
+    if (got != scope->entities.end())
         return &got->second;
 
     if (scope->parent != nullptr)
@@ -294,20 +296,20 @@ Declarable *fetch(Scope *scope, string id)
     return nullptr;
 }
 
-Declarable *declare(Scope &scope, string id, DeclarableKind kind)
+Entity *declare(Scope &scope, string id, EntityKind kind)
 {
-    Declarable dec;
+    Entity dec;
 
     dec.identity = id;
     dec.kind = kind;
 
-    if (kind == DeclarableKind::Variable)
+    if (kind == EntityKind::Variable)
     {
         dec.variable.type = TinyType::Value_Or_List;
     }
 
-    scope.declarables[id] = dec;
-    return &scope.declarables[id];
+    scope.entities[id] = dec;
+    return &scope.entities[id];
 }
 
 // COMPILER //
@@ -416,14 +418,14 @@ void compile_identity(Compiler &compiler, Scope &scope)
     else
     {
         string id = identity.str;
-        Declarable *dec = fetch(&scope, id);
+        Entity *dec = fetch(&scope, id);
 
         if (dec == nullptr)
         {
             *compiler.out_statement_block << "value " << id << ";";
-            declare(scope, id, DeclarableKind::Variable);
+            declare(scope, id, EntityKind::Variable);
         }
-        else if (dec->kind == DeclarableKind::Function)
+        else if (dec->kind == EntityKind::Function)
         {
             error(compiler, "Cannot use function as an expression.");
         }
@@ -435,11 +437,11 @@ void compile_identity(Compiler &compiler, Scope &scope)
 void compile_call(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected function name.").str;
-    Declarable *funct = fetch(&scope, id);
+    Entity *funct = fetch(&scope, id);
 
     if (funct == nullptr)
         error(compiler, "Function '" + id + "' does not exist.");
-    else if (funct->kind != DeclarableKind::Function)
+    else if (funct->kind != EntityKind::Function)
         error(compiler, "'" + id + "' is not a function.");
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
@@ -557,13 +559,13 @@ bool peek_statement(const Compiler &compiler)
 void compile_assign_stmt(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected variable name.").str;
-    Declarable *dec = fetch(&scope, id);
+    Entity *dec = fetch(&scope, id);
     bool already_existed = dec != nullptr;
 
     if (dec == nullptr)
-        dec = declare(scope, id, DeclarableKind::Variable);
+        dec = declare(scope, id, EntityKind::Variable);
 
-    if (dec->kind != DeclarableKind::Variable)
+    if (dec->kind != EntityKind::Variable)
     {
         error(compiler, "Cannot assign to '" + id + "' as it is not a variable.");
         return;
@@ -660,7 +662,6 @@ void compile_statement(Compiler &compiler, Scope &scope)
 
 void compile_statement_block(Compiler &compiler, Scope &scope)
 {
-    // FIXME: Give line numbers when eating '{' or '}' fails.
     eat(compiler, TokenKind::CurlyL, "Expected '{' to open block.");
     *compiler.out << '{';
 
@@ -688,7 +689,7 @@ void compile_function(Compiler &compiler, Scope &scope)
     string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     compiler.in_main = identity == "main";
 
-    declare(scope, identity, DeclarableKind::Function);
+    declare(scope, identity, EntityKind::Function);
 
     *compiler.out
         << (compiler.in_main ? "int " : "void ")
