@@ -354,6 +354,7 @@ struct Compiler
     bool inserting_chars = false;
     bool inserting_ltr = false;
     bool in_main = false;
+    Entity *in_function = nullptr;
     TinyType function_returns;
 
     Compiler(Lexer *lexer) : lexer(lexer) {}
@@ -754,6 +755,23 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
     *compiler.out << '}';
 }
 
+void compile_parameter(Compiler &compiler, Scope &scope)
+{
+    string id = eat(compiler, TokenKind::Identity, "Expected parameter name.").str;
+    Entity *var = declare(scope, id, EntityKind::Variable);
+    var->variable.type = TinyType::Value;
+
+    if (match(compiler, TokenKind::SquareL))
+    {
+        eat(compiler, TokenKind::SquareR, "Expected ']'");
+        var->variable.type = TinyType::List;
+    }
+
+    *compiler.out
+        << (var->variable.type == TinyType::Value ? "value " : "list ")
+        << id;
+}
+
 void compile_function(Compiler &compiler, Scope &scope)
 {
     stringstream *parent_stream = compiler.out;
@@ -764,12 +782,21 @@ void compile_function(Compiler &compiler, Scope &scope)
     compiler.in_main = identity == "main";
     compiler.function_returns = TinyType::Unspecified;
 
-    declare(scope, identity, EntityKind::Function);
+    Entity *fun = declare(scope, identity, EntityKind::Function);
+    compiler.in_function = fun;
 
     *compiler.out << identity << "(";
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
-    // TODO: Parse and generate function parameters
+    if (peek(compiler) == TokenKind::Identity)
+    {
+        compile_parameter(compiler, scope);
+        while (match(compiler, TokenKind::Comma))
+        {
+            *compiler.out << ",";
+            compile_parameter(compiler, scope);
+        }
+    }
     eat(compiler, TokenKind::ParenR, "Expected ')' at end of function parameters.");
 
     *compiler.out << ")";
