@@ -267,9 +267,11 @@ void next_token(Lexer &lexer)
 
 enum class TinyType
 {
+    Unspecified,
     Value_Or_List,
     Value,
     List,
+    None,
 };
 
 enum class EntityKind
@@ -344,6 +346,7 @@ struct Compiler
     bool inserting_chars = false;
     bool inserting_ltr = false;
     bool in_main = false;
+    TinyType function_returns;
 
     Compiler(Lexer *lexer) : lexer(lexer) {}
 };
@@ -665,11 +668,20 @@ void compile_return_stmt(Compiler &compiler, Scope &scope)
 {
     eat(compiler, TokenKind::Return, "Expected 'return'");
     *compiler.out << "return";
+    TinyType return_type = TinyType::None;
     if (peek_expression(compiler))
     {
         *compiler.out << " ";
         compile_expression(compiler, scope);
+
+        // FIXME: Return type should be infered from expression
+        // return_type = compile_expression(compiler, scope);
     }
+
+    if (compiler.function_returns == TinyType::Unspecified)
+        compiler.function_returns = return_type;
+    else if (compiler.function_returns != return_type)
+        error(compiler, "Incorrect return type");
 }
 
 void compile_statement(Compiler &compiler, Scope &scope)
@@ -723,15 +735,17 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 
 void compile_function(Compiler &compiler, Scope &scope)
 {
+    stringstream *parent_stream = compiler.out;
+    stringstream function_body;
+    compiler.out = &function_body;
+
     string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     compiler.in_main = identity == "main";
+    compiler.function_returns = TinyType::Unspecified;
 
     declare(scope, identity, EntityKind::Function);
 
-    *compiler.out
-        << (compiler.in_main ? "int " : "void ")
-        << identity
-        << "(";
+    *compiler.out << identity << "(";
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
     // TODO: Parse and generate function parameters
@@ -739,7 +753,36 @@ void compile_function(Compiler &compiler, Scope &scope)
 
     *compiler.out << ")";
     compile_statement_block(compiler, scope);
-    compiler.in_main = false;
+
+    compiler.out = parent_stream;
+
+    if (compiler.function_returns == TinyType::Unspecified)
+        compiler.function_returns = TinyType::None;
+
+    if (compiler.in_main)
+    {
+        // FIXME: Determine what the correct behaviour here should actually be.
+        *compiler.out << "int ";
+    }
+    else
+    {
+        switch (compiler.function_returns)
+        {
+        case TinyType::None:
+            *compiler.out << "void ";
+            break;
+        case TinyType::Value:
+            *compiler.out << "value ";
+            break;
+        case TinyType::List:
+            *compiler.out << "list ";
+            break;
+        default:
+            error(compiler, "Unable to generate C++ function return type.");
+            break;
+        }
+    }
+    *compiler.out << function_body.rdbuf();
 }
 
 void compile_program(Compiler &compiler)
