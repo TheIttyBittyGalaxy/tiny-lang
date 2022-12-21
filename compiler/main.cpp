@@ -57,16 +57,13 @@ struct Token
 struct Lexer
 {
     string *src;
-    size_t token_pos;
-    size_t current_pos;
-    int current_line;
-    Token current;
-    Token next;
+    size_t token_pos = 0;
+    size_t current_pos = 0;
+    size_t current_line = 0;
+    bool finished = false;
+    vector<Token> tokens;
 
-    Lexer(string *src) : src(src),
-                         token_pos(0),
-                         current_pos(0),
-                         current_line(1) {}
+    Lexer(string *src) : src(src) {}
 };
 
 void error(const Lexer &lexer, const string msg)
@@ -107,118 +104,120 @@ bool char_is_name(const char c)
 
 void make_token(Lexer &lexer, const TokenKind kind)
 {
-    lexer.next.kind = kind;
+    Token t;
+    t.kind = kind;
     size_t length = (lexer.current_pos - lexer.token_pos);
-    lexer.next.str = lexer.src->substr(lexer.token_pos, length);
-    lexer.next.line = kind != TokenKind::Line ? lexer.current_line : lexer.current_line - 1;
+    t.str = lexer.src->substr(lexer.token_pos, length);
+    t.line = kind != TokenKind::Line ? lexer.current_line : lexer.current_line - 1;
+
+    lexer.tokens.push_back(t);
+
+    cout
+        << std::setfill('0') << std::setw(2) << (int)t.kind << " "
+        << ((t.kind == TokenKind::Line)
+                ? "new line"
+                : t.str)
+        << endl;
 }
 
 void next_token(Lexer &lexer)
 {
-    lexer.current = lexer.next;
-
-    cout
-        << std::setfill('0') << std::setw(2) << (int)lexer.current.kind << " "
-        << ((lexer.current.kind == TokenKind::Line)
-                ? "new line"
-                : lexer.current.str)
-        << endl;
-
-    if (lexer.next.kind == TokenKind::EndOfFile || lexer.current.kind == TokenKind::EndOfFile)
+    if (lexer.finished)
         return;
 
-    while (peek(lexer) != '\0')
-    {
-        while (peek(lexer) == ' ' || peek(lexer) == '\t')
-            next(lexer);
-
-        lexer.token_pos = lexer.current_pos;
-
-        char c = next(lexer);
-        switch (c)
-        {
-        case '\n':
-            make_token(lexer, TokenKind::Line);
-            return;
-
-        case '(':
-            make_token(lexer, TokenKind::ParenL);
-            return;
-        case ')':
-            make_token(lexer, TokenKind::ParenR);
-            return;
-        case '{':
-            make_token(lexer, TokenKind::CurlyL);
-            return;
-        case '}':
-            make_token(lexer, TokenKind::CurlyR);
-            return;
-
-        case '<':
-        {
-            switch (peek(lexer))
-            {
-            case '<':
-                next(lexer);
-                make_token(lexer, TokenKind::InsertL);
-                return;
-            case '=':
-                next(lexer);
-                make_token(lexer, TokenKind::LessThanEqual);
-                return;
-            }
-            make_token(lexer, TokenKind::LessThan);
-            return;
-        }
-
-        case '>':
-        {
-            switch (peek(lexer))
-            {
-            case '>':
-                next(lexer);
-                make_token(lexer, TokenKind::InsertR);
-                return;
-            case '=':
-                next(lexer);
-                make_token(lexer, TokenKind::GreaterThanEqual);
-                return;
-            }
-            make_token(lexer, TokenKind::GreaterThan);
-            return;
-        }
-
-        case '"':
-        {
-            char n;
-            do
-            {
-                n = next(lexer);
-                if (n == '\0')
-                    error(lexer, "Unterminated string at end of file");
-            } while (n != '"');
-            make_token(lexer, TokenKind::String);
-            return;
-        }
-
-        default:
-        {
-            if (char_is_name(c))
-            {
-                while (char_is_name(peek(lexer)))
-                    next(lexer);
-                make_token(lexer, TokenKind::Identity);
-                return;
-            }
-
-            error(lexer, "Unable to parse character '" + string(1, c) + "'");
-            return;
-        }
-        }
-    }
+    while (peek(lexer) == ' ' || peek(lexer) == '\t')
+        next(lexer);
 
     lexer.token_pos = lexer.current_pos;
-    make_token(lexer, TokenKind::EndOfFile);
+
+    if (peek(lexer) == '\0')
+    {
+        make_token(lexer, TokenKind::EndOfFile);
+        lexer.finished = true;
+        return;
+    }
+
+    char c = next(lexer);
+    switch (c)
+    {
+    case '\n':
+        make_token(lexer, TokenKind::Line);
+        return;
+
+    case '(':
+        make_token(lexer, TokenKind::ParenL);
+        return;
+    case ')':
+        make_token(lexer, TokenKind::ParenR);
+        return;
+    case '{':
+        make_token(lexer, TokenKind::CurlyL);
+        return;
+    case '}':
+        make_token(lexer, TokenKind::CurlyR);
+        return;
+
+    case '<':
+    {
+        switch (peek(lexer))
+        {
+        case '<':
+            next(lexer);
+            make_token(lexer, TokenKind::InsertL);
+            return;
+        case '=':
+            next(lexer);
+            make_token(lexer, TokenKind::LessThanEqual);
+            return;
+        }
+        make_token(lexer, TokenKind::LessThan);
+        return;
+    }
+
+    case '>':
+    {
+        switch (peek(lexer))
+        {
+        case '>':
+            next(lexer);
+            make_token(lexer, TokenKind::InsertR);
+            return;
+        case '=':
+            next(lexer);
+            make_token(lexer, TokenKind::GreaterThanEqual);
+            return;
+        }
+        make_token(lexer, TokenKind::GreaterThan);
+        return;
+    }
+
+    case '"':
+    {
+        char n;
+        do
+        {
+            n = next(lexer);
+            if (n == '\0')
+                error(lexer, "Unterminated string at end of file");
+        } while (n != '"');
+        make_token(lexer, TokenKind::String);
+        return;
+    }
+
+    default:
+    {
+        if (char_is_name(c))
+        {
+            while (char_is_name(peek(lexer)))
+                next(lexer);
+            make_token(lexer, TokenKind::Identity);
+            return;
+        }
+
+        error(lexer, "Unable to parse character '" + string(1, c) + "'");
+        return;
+    }
+    }
 }
 
 // COMPILER //
@@ -227,6 +226,7 @@ struct Compiler
 {
     Lexer *lexer;
     std::ofstream out;
+    size_t current_token = 0;
     bool insert_stmt = false;
     bool inserting_chars = false;
     bool in_main = false;
@@ -234,13 +234,30 @@ struct Compiler
     Compiler(Lexer *lexer) : lexer(lexer) {}
 };
 
+Token current_token(const Compiler &compiler)
+{
+    size_t i = std::min(compiler.current_token, compiler.lexer->tokens.size() - 1);
+    return compiler.lexer->tokens.at(i);
+}
+
+TokenKind peek(const Compiler &compiler)
+{
+    return current_token(compiler).kind;
+}
+
+TokenKind peek_ahead(const Compiler &compiler, size_t amt)
+{
+    size_t i = std::min(compiler.current_token + amt, compiler.lexer->tokens.size() - 1);
+    return compiler.lexer->tokens.at(i).kind;
+}
+
 void error(const Compiler &compiler, const string msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
-    Token current = compiler.lexer->current;
+    Token current = current_token(compiler);
     cout << "Error on line " << current.line << ": " << msg;
     if (current.kind == TokenKind::Line)
         cout << " (got new line)";
@@ -249,21 +266,12 @@ void error(const Compiler &compiler, const string msg)
     cout << endl;
 }
 
-TokenKind peek(const Compiler &compiler)
-{
-    return compiler.lexer->current.kind;
-}
-
-TokenKind peek_next(const Compiler &compiler)
-{
-    return compiler.lexer->next.kind;
-}
-
 bool match(Compiler &compiler, TokenKind kind)
 {
     if (peek(compiler) != kind)
         return false;
     next_token(*compiler.lexer);
+    compiler.current_token++;
     return true;
 }
 
@@ -275,7 +283,7 @@ Token eat(Compiler &compiler, TokenKind kind, const string msg)
             ;
     }
 
-    Token t = compiler.lexer->current;
+    Token t = current_token(compiler);
     if (!match(compiler, kind))
         error(compiler, msg);
     return t;
@@ -507,10 +515,10 @@ int main(int argc, char *argv[])
     src_file.close();
 
     Lexer lexer(&src);
-    Compiler compiler(&lexer);
+    while (!lexer.finished)
+        next_token(lexer);
 
-    next_token(lexer);
-    next_token(lexer);
+    Compiler compiler(&lexer);
     compile_program(compiler);
 
     cout << "FINISH" << endl;
