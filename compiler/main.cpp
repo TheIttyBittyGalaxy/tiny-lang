@@ -23,12 +23,15 @@ enum class TokenKind
     Null,
 
     Identity,
+    SquareL,
+    SquareR,
     CurlyL,
     CurlyR,
     ParenL,
     ParenR,
 
     Comma,
+    Assign,
 
     String,
 
@@ -150,6 +153,12 @@ void next_token(Lexer &lexer)
         make_token(lexer, TokenKind::Line);
         return;
 
+    case '[':
+        make_token(lexer, TokenKind::SquareL);
+        return;
+    case ']':
+        make_token(lexer, TokenKind::SquareR);
+        return;
     case '(':
         make_token(lexer, TokenKind::ParenL);
         return;
@@ -165,6 +174,10 @@ void next_token(Lexer &lexer)
 
     case ',':
         make_token(lexer, TokenKind::Comma);
+        return;
+
+    case '=':
+        make_token(lexer, TokenKind::Assign);
         return;
 
     case '<':
@@ -232,6 +245,13 @@ void next_token(Lexer &lexer)
 
 // PROGRAM MODEL //
 
+enum class TinyType
+{
+    Value_Or_List,
+    Value,
+    List,
+};
+
 enum class DeclarableKind
 {
     Null,
@@ -239,10 +259,18 @@ enum class DeclarableKind
     Function,
 };
 
+// TODO: Could 'kind' and 'type' potentially be collapsed all into one thing?
 struct Declarable
 {
     DeclarableKind kind = DeclarableKind::Null;
     string identity = "UNDEFINED";
+    union
+    {
+        struct
+        {
+            TinyType type;
+        } variable;
+    };
 };
 
 struct Scope
@@ -266,12 +294,20 @@ Declarable *fetch(Scope *scope, string id)
     return nullptr;
 }
 
-void declare(Scope &scope, string id, DeclarableKind kind)
+Declarable *declare(Scope &scope, string id, DeclarableKind kind)
 {
     Declarable dec;
+
     dec.identity = id;
     dec.kind = kind;
+
+    if (kind == DeclarableKind::Variable)
+    {
+        dec.variable.type = TinyType::Value_Or_List;
+    }
+
     scope.declarables[id] = dec;
+    return &scope.declarables[id];
 }
 
 // COMPILER //
@@ -384,7 +420,7 @@ void compile_identity(Compiler &compiler, Scope &scope)
 
         if (dec == nullptr)
         {
-            *compiler.out_statement_block << "int " << id << ";";
+            *compiler.out_statement_block << "value " << id << ";";
             declare(scope, id, DeclarableKind::Variable);
         }
         else if (dec->kind == DeclarableKind::Function)
@@ -497,6 +533,12 @@ bool peek_token_in_statement(const Compiler &compiler, TokenKind kind)
     return true;
 }
 
+bool peek_assign_stmt(const Compiler &compiler)
+{
+    return peek(compiler) == TokenKind::Identity && (peek_ahead(compiler, 1) == TokenKind::SquareL ||
+                                                     peek_ahead(compiler, 1) == TokenKind::Assign);
+}
+
 bool peek_ltr_insert_stmt(const Compiler &compiler)
 {
     return peek_token_in_statement(compiler, TokenKind::InsertR);
@@ -505,6 +547,50 @@ bool peek_ltr_insert_stmt(const Compiler &compiler)
 bool peek_rtl_insert_stmt(const Compiler &compiler)
 {
     return peek_token_in_statement(compiler, TokenKind::InsertL);
+}
+
+bool peek_statement(const Compiler &compiler)
+{
+    return peek_expression(compiler);
+}
+
+void compile_assign_stmt(Compiler &compiler, Scope &scope)
+{
+    string id = eat(compiler, TokenKind::Identity, "Expected variable name.").str;
+    Declarable *dec = fetch(&scope, id);
+    bool already_existed = dec != nullptr;
+
+    if (dec == nullptr)
+        dec = declare(scope, id, DeclarableKind::Variable);
+
+    if (dec->kind != DeclarableKind::Variable)
+    {
+        error(compiler, "Cannot assign to '" + id + "' as it is not a variable.");
+        return;
+    }
+
+    if (match(compiler, TokenKind::SquareL))
+    {
+        if (!already_existed)
+            dec->variable.type = TinyType::List;
+        else if (dec->variable.type != TinyType::List)
+            error(compiler, "Variable '" + id + "' cannot be redeclared as a list.");
+        eat(compiler, TokenKind::SquareR, "Expected ']'");
+    }
+
+    if (match(compiler, TokenKind::Assign))
+    {
+        // FIXME: Implement variable assignment
+        error(compiler, "Variable assignment not yet implemented.");
+    }
+
+    if (dec->variable.type == TinyType::Value_Or_List)
+        dec->variable.type = TinyType::Value;
+
+    if (!already_existed)
+        *compiler.out << (dec->variable.type == TinyType::Value ? "value " : "list ");
+
+    *compiler.out << id;
 }
 
 void compile_ltr_insert_stmt(Compiler &compiler, Scope &scope)
@@ -549,11 +635,6 @@ void compile_rtl_insert_stmt(Compiler &compiler, Scope &scope)
     compiler.insert_stmt = false;
 }
 
-bool peek_statement(const Compiler &compiler)
-{
-    return peek_expression(compiler);
-}
-
 void compile_statement(Compiler &compiler, Scope &scope)
 {
     skip_lines(compiler);
@@ -562,7 +643,9 @@ void compile_statement(Compiler &compiler, Scope &scope)
     stringstream statement;
     compiler.out = &statement;
 
-    if (peek_ltr_insert_stmt(compiler))
+    if (peek_assign_stmt(compiler))
+        compile_assign_stmt(compiler, scope);
+    else if (peek_ltr_insert_stmt(compiler))
         compile_ltr_insert_stmt(compiler, scope);
     else if (peek_rtl_insert_stmt(compiler))
         compile_rtl_insert_stmt(compiler, scope);
@@ -644,8 +727,12 @@ void compile_program(Compiler &compiler)
         error(compiler, "Output file " + out_path + " could not be loaded");
         return;
     }
-    out_file << "#include <iostream>\n";
-    out_file << program.rdbuf();
+    out_file
+        << "#include <iostream>\n"
+        << "#include <vector>\n"
+        << "using value = int;\n"
+        << "using list = std::vector<int>;\n"
+        << program.rdbuf();
     out_file.close();
 }
 

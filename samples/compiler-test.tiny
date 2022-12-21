@@ -1,7 +1,9 @@
-reverse() {}
+reverse() {
+    reversed[]
+}
 
 main() {
     console << "Input: "
     console >> input
-    console << "Output: " << reverse(input, a)
+    console << "Output: " << reverse(input)
 }
