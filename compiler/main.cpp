@@ -318,12 +318,17 @@ bool match(Compiler &compiler, TokenKind kind)
     return true;
 }
 
+void skip_lines(Compiler &compiler)
+{
+    while (match(compiler, TokenKind::Line))
+        ;
+}
+
 Token eat(Compiler &compiler, TokenKind kind, const string msg)
 {
     if (kind != TokenKind::Line)
     {
-        while (match(compiler, TokenKind::Line))
-            ;
+        skip_lines(compiler);
     }
 
     Token t = current_token(compiler);
@@ -501,8 +506,7 @@ bool peek_statement(const Compiler &compiler)
 
 void compile_statement(Compiler &compiler, Scope &scope)
 {
-    while (match(compiler, TokenKind::Line))
-        ;
+    skip_lines(compiler);
 
     stringstream *parent_stream = compiler.out;
     stringstream statement;
@@ -527,8 +531,7 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
     eat(compiler, TokenKind::CurlyL, "Expected '{' to open block.");
     *compiler.out << '{';
 
-    while (match(compiler, TokenKind::Line))
-        ;
+    skip_lines(compiler);
 
     Scope block_scope = Scope(&scope);
 
@@ -573,13 +576,11 @@ void compile_program(Compiler &compiler)
 
     Scope program_scope;
 
-    while (match(compiler, TokenKind::Line))
-        ;
+    skip_lines(compiler);
     while (peek(compiler) == TokenKind::Identity)
     {
         compile_function(compiler, program_scope);
-        while (match(compiler, TokenKind::Line))
-            ;
+        skip_lines(compiler);
     }
     eat(compiler, TokenKind::EndOfFile, "Expected end of file");
 
