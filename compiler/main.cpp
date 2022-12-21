@@ -299,22 +299,43 @@ enum class EntityKind
     Function,
 };
 
-// TODO: Could 'kind' and 'type' potentially be collapsed all into one thing?
 struct Entity
 {
+    struct Variable
+    {
+        TinyType type = TinyType::Unspecified;
+    };
+
+    struct Function
+    {
+        TinyType return_type = TinyType::Unspecified;
+    };
+
     EntityKind kind = EntityKind::Null;
     string identity = "";
     string c_identity = "_ERROR_NULL_ENTITY";
     union
     {
-        struct
-        {
-            TinyType type;
-        } variable;
-        struct
-        {
-            TinyType return_type;
-        } function;
+        Variable variable;
+        Function function;
+    };
+
+    Entity(){};
+
+    Entity(EntityKind kind) : kind(kind)
+    {
+        if (kind == EntityKind::Variable)
+            variable = Variable();
+        else if (kind == EntityKind::Function)
+            function = Function();
+    }
+
+    ~Entity()
+    {
+        if (kind == EntityKind::Variable)
+            variable.~Variable();
+        else if (kind == EntityKind::Function)
+            function.~Function();
     };
 };
 
@@ -339,23 +360,12 @@ Entity *fetch(Scope *scope, string id)
     return nullptr;
 }
 
-Entity *declare(Scope &scope, string id, EntityKind kind)
+Entity *declare(Scope &scope, EntityKind kind, string id)
 {
-    Entity dec;
-
+    Entity dec(kind);
     dec.identity = id;
     // FIXME: Find a proper policy for generating the C++ identifiers that won't clash
     dec.c_identity = id == "main" ? id : id + "_";
-    dec.kind = kind;
-
-    if (kind == EntityKind::Variable)
-    {
-        dec.variable.type = TinyType::Unspecified;
-    }
-    else if (kind == EntityKind::Function)
-    {
-        dec.function.return_type = TinyType::Unspecified;
-    }
 
     scope.entities[id] = dec;
     return &scope.entities[id];
@@ -476,7 +486,7 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
 
         if (dec == nullptr)
         {
-            dec = declare(scope, id, EntityKind::Variable);
+            dec = declare(scope, EntityKind::Variable, id);
         }
         else if (dec->kind == EntityKind::Function)
         {
@@ -642,7 +652,7 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
     bool already_existed = dec != nullptr;
 
     if (dec == nullptr)
-        dec = declare(scope, id, EntityKind::Variable);
+        dec = declare(scope, EntityKind::Variable, id);
 
     if (dec->kind != EntityKind::Variable)
     {
@@ -805,7 +815,7 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
 void compile_parameter(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected parameter name.").str;
-    Entity *param = declare(scope, id, EntityKind::Variable);
+    Entity *param = declare(scope, EntityKind::Variable, id);
     param->variable.type = TinyType::Value;
 
     if (match(compiler, TokenKind::SquareL))
@@ -831,7 +841,7 @@ void compile_function(Compiler &compiler, Scope &scope)
     string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     compiler.in_main = identity == "main";
 
-    Entity *fun = declare(scope, identity, EntityKind::Function);
+    Entity *fun = declare(scope, EntityKind::Function, identity);
     fun->function.return_type = TinyType::Unspecified;
     compiler.in_function = fun;
 
