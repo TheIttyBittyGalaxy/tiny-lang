@@ -268,9 +268,9 @@ void next_token(Lexer &lexer)
 enum class TinyType
 {
     Unspecified,
-    Value_Or_List,
     Value,
     List,
+    Console,
     None,
 };
 
@@ -292,6 +292,10 @@ struct Entity
         {
             TinyType type;
         } variable;
+        struct
+        {
+            TinyType return_type;
+        } function;
     };
 };
 
@@ -325,7 +329,11 @@ Entity *declare(Scope &scope, string id, EntityKind kind)
 
     if (kind == EntityKind::Variable)
     {
-        dec.variable.type = TinyType::Value_Or_List;
+        dec.variable.type = TinyType::Unspecified;
+    }
+    else if (kind == EntityKind::Variable)
+    {
+        dec.function.return_type = TinyType::Unspecified;
     }
 
     scope.entities[id] = dec;
@@ -423,11 +431,12 @@ bool peek_expression(const Compiler &compiler)
            peek(compiler) == TokenKind::Identity;
 }
 
-void compile_expression(Compiler &compiler, Scope &scope);
+TinyType compile_expression(Compiler &compiler, Scope &scope);
 
-void compile_identity(Compiler &compiler, Scope &scope)
+TinyType compile_identity(Compiler &compiler, Scope &scope)
 {
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
+    // FIXME: Have a console variable declared in the global scope
     if (identity.str == "console")
     {
         *compiler.out << (compiler.inserting_ltr ? "std::cin" : "std::cout");
@@ -435,27 +444,36 @@ void compile_identity(Compiler &compiler, Scope &scope)
         // FIXME: This should only occour if it happens in the first expression of the insert statement
         if (!compiler.inserting_ltr)
             compiler.inserting_chars = true;
+
+        return TinyType::Console;
     }
     else
     {
         string id = identity.str;
         Entity *dec = fetch(&scope, id);
+        bool valid_variable = true;
 
         if (dec == nullptr)
         {
+            dec = declare(scope, id, EntityKind::Variable);
+            dec->variable.type = TinyType::Value;
             *compiler.out_statement_block << "value " << id << ";";
-            declare(scope, id, EntityKind::Variable);
         }
         else if (dec->kind == EntityKind::Function)
         {
+            valid_variable = false;
             error(compiler, "Cannot use function as an expression.");
         }
 
         *compiler.out << id;
+
+        return valid_variable ? dec->variable.type : TinyType::Unspecified;
     }
+
+    return TinyType::Unspecified;
 }
 
-void compile_call(Compiler &compiler, Scope &scope)
+TinyType compile_call(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     Entity *funct = fetch(&scope, id);
@@ -480,9 +498,11 @@ void compile_call(Compiler &compiler, Scope &scope)
 
     eat(compiler, TokenKind::ParenR, "Expected ')' after function arguments.");
     *compiler.out << ")";
+
+    return funct->function.return_type;
 }
 
-void compile_list_literal(Compiler &compiler)
+TinyType compile_list_literal(Compiler &compiler)
 {
     vector<int> values;
     if (peek(compiler) == TokenKind::String)
@@ -528,18 +548,22 @@ void compile_list_literal(Compiler &compiler)
 
         *compiler.out << '}';
     }
+
+    return TinyType::List;
 }
 
-void compile_expression(Compiler &compiler, Scope &scope)
+TinyType compile_expression(Compiler &compiler, Scope &scope)
 {
     if (peek_call(compiler))
-        compile_call(compiler, scope);
+        return compile_call(compiler, scope);
     else if (peek(compiler) == TokenKind::String)
-        compile_list_literal(compiler);
+        return compile_list_literal(compiler);
     else if (peek(compiler) == TokenKind::Identity)
-        compile_identity(compiler, scope);
+        return compile_identity(compiler, scope);
     else
         error(compiler, "Expected expression");
+
+    return TinyType::Unspecified;
 }
 
 bool peek_token_in_statement(const Compiler &compiler, TokenKind kind)
@@ -613,7 +637,7 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
         error(compiler, "Variable assignment not yet implemented.");
     }
 
-    if (dec->variable.type == TinyType::Value_Or_List)
+    if (dec->variable.type == TinyType::Unspecified)
         dec->variable.type = TinyType::Value;
 
     if (!already_existed)
@@ -672,10 +696,7 @@ void compile_return_stmt(Compiler &compiler, Scope &scope)
     if (peek_expression(compiler))
     {
         *compiler.out << " ";
-        compile_expression(compiler, scope);
-
-        // FIXME: Return type should be infered from expression
-        // return_type = compile_expression(compiler, scope);
+        return_type = compile_expression(compiler, scope);
     }
 
     if (compiler.function_returns == TinyType::Unspecified)
