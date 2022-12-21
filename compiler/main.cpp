@@ -5,8 +5,10 @@
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <map>
 using std::cout;
 using std::endl;
+using std::map;
 using std::string;
 using std::stringstream;
 using std::vector;
@@ -222,13 +224,51 @@ void next_token(Lexer &lexer)
     }
 }
 
+// PROGRAM MODEL //
+
+struct Declarable
+{
+    string identity;
+};
+
+struct Scope
+{
+    std::map<string, Declarable> declarables;
+    Scope *parent = nullptr;
+
+    Scope(){};
+    Scope(Scope *parent) : parent(parent){};
+};
+
+Declarable *fetch(Scope *scope, string id)
+{
+    auto got = scope->declarables.find(id);
+    if (got != scope->declarables.end())
+        return &got->second;
+
+    if (scope->parent != nullptr)
+        return fetch(scope->parent, id);
+
+    return nullptr;
+}
+
+void declare(Scope &scope, string id)
+{
+    Declarable dec;
+    dec.identity = id;
+    scope.declarables[id] = dec;
+}
+
 // COMPILER //
 
 struct Compiler
 {
     Lexer *lexer;
-    stringstream *out;
     size_t current_token = 0;
+
+    stringstream *out = nullptr;
+    stringstream *out_statement_block = nullptr;
+
     bool insert_stmt = false;
     bool inserting_chars = false;
     bool inserting_ltr = false;
@@ -292,7 +332,7 @@ Token eat(Compiler &compiler, TokenKind kind, const string msg)
     return t;
 }
 
-void compile_identity(Compiler &compiler)
+void compile_identity(Compiler &compiler, Scope &scope)
 {
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
     if (identity.str == "console")
@@ -305,7 +345,14 @@ void compile_identity(Compiler &compiler)
     }
     else
     {
-        *compiler.out << identity.str;
+        string id = identity.str;
+        Declarable *dec = fetch(&scope, id);
+        if (dec == nullptr)
+        {
+            *compiler.out_statement_block << "int " << id << ";";
+            declare(scope, id);
+        }
+        *compiler.out << id;
     }
 }
 
@@ -363,12 +410,12 @@ bool peek_expression(const Compiler &compiler)
            peek(compiler) == TokenKind::String;
 }
 
-void compile_expression(Compiler &compiler)
+void compile_expression(Compiler &compiler, Scope &scope)
 {
     switch (peek(compiler))
     {
     case TokenKind::Identity:
-        compile_identity(compiler);
+        compile_identity(compiler, scope);
         break;
 
     case TokenKind::String:
@@ -405,43 +452,43 @@ bool peek_rtl_insert_stmt(const Compiler &compiler)
     return peek_token_in_statement(compiler, TokenKind::InsertL);
 }
 
-void compile_ltr_insert_stmt(Compiler &compiler)
+void compile_ltr_insert_stmt(Compiler &compiler, Scope &scope)
 {
     compiler.insert_stmt = true;
     compiler.inserting_ltr = true;
     compiler.inserting_chars = false;
-    compile_expression(compiler);
+    compile_expression(compiler, scope);
 
     eat(compiler, TokenKind::InsertR, "Expected >> operator.");
     *compiler.out << ">>";
 
-    compile_expression(compiler);
+    compile_expression(compiler, scope);
 
     while (match(compiler, TokenKind::InsertR))
     {
         *compiler.out << ">>";
-        compile_expression(compiler);
+        compile_expression(compiler, scope);
     }
 
     compiler.insert_stmt = false;
 }
 
-void compile_rtl_insert_stmt(Compiler &compiler)
+void compile_rtl_insert_stmt(Compiler &compiler, Scope &scope)
 {
     compiler.insert_stmt = true;
     compiler.inserting_ltr = false;
     compiler.inserting_chars = false;
-    compile_expression(compiler);
+    compile_expression(compiler, scope);
 
     eat(compiler, TokenKind::InsertL, "Expected << operator.");
     *compiler.out << "<<";
 
-    compile_expression(compiler);
+    compile_expression(compiler, scope);
 
     while (match(compiler, TokenKind::InsertL))
     {
         *compiler.out << "<<";
-        compile_expression(compiler);
+        compile_expression(compiler, scope);
     }
 
     compiler.insert_stmt = false;
@@ -452,22 +499,29 @@ bool peek_statement(const Compiler &compiler)
     return peek_expression(compiler);
 }
 
-void compile_statement(Compiler &compiler)
+void compile_statement(Compiler &compiler, Scope &scope)
 {
     while (match(compiler, TokenKind::Line))
         ;
 
+    stringstream *parent_stream = compiler.out;
+    stringstream statement;
+    compiler.out = &statement;
+
     if (peek_ltr_insert_stmt(compiler))
-        compile_ltr_insert_stmt(compiler);
+        compile_ltr_insert_stmt(compiler, scope);
     else if (peek_rtl_insert_stmt(compiler))
-        compile_rtl_insert_stmt(compiler);
+        compile_rtl_insert_stmt(compiler, scope);
     else
-        compile_expression(compiler);
+        compile_expression(compiler, scope);
 
     eat(compiler, TokenKind::Line, "Expected newline to terminate statement");
+
+    compiler.out = parent_stream;
+    *compiler.out << statement.rdbuf();
 }
 
-void compile_statement_block(Compiler &compiler)
+void compile_statement_block(Compiler &compiler, Scope &scope)
 {
     // FIXME: Give line numbers when eating '{' or '}' fails.
     eat(compiler, TokenKind::CurlyL, "Expected '{' to open block.");
@@ -476,20 +530,24 @@ void compile_statement_block(Compiler &compiler)
     while (match(compiler, TokenKind::Line))
         ;
 
+    Scope block_scope = Scope(&scope);
+
+    compiler.out_statement_block = compiler.out;
     while (peek_statement(compiler))
     {
-        compile_statement(compiler);
+        compile_statement(compiler, block_scope);
         *compiler.out << ";";
     }
 
     if (compiler.in_main)
         *compiler.out << "return 0;";
+    compiler.out_statement_block = nullptr;
 
     eat(compiler, TokenKind::CurlyR, "Expected '}' to close block.");
     *compiler.out << '}';
 }
 
-void compile_function(Compiler &compiler)
+void compile_function(Compiler &compiler, Scope &scope)
 {
     Token identity = eat(compiler, TokenKind::Identity, "Expected function name.");
     compiler.in_main = identity.str == "main";
@@ -504,7 +562,7 @@ void compile_function(Compiler &compiler)
     eat(compiler, TokenKind::ParenR, "Expected ')' at end of function parameters.");
 
     *compiler.out << ")";
-    compile_statement_block(compiler);
+    compile_statement_block(compiler, scope);
     compiler.in_main = false;
 }
 
@@ -512,8 +570,11 @@ void compile_program(Compiler &compiler)
 {
     stringstream program;
     compiler.out = &program;
+
+    Scope program_scope;
+
     while (peek(compiler) == TokenKind::Identity)
-        compile_function(compiler);
+        compile_function(compiler, program_scope);
     eat(compiler, TokenKind::EndOfFile, "Expected end of file");
 
     string out_path = "local/output.cpp";
