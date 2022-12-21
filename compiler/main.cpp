@@ -9,32 +9,6 @@ using std::endl;
 using std::string;
 using std::vector;
 
-// VECTOR UTIL //
-
-template <typename T>
-struct ptr
-{
-private:
-    vector<T> *container = nullptr;
-    size_t index = 0;
-
-public:
-    ptr() : container(nullptr), index(0){};
-    ptr(vector<T> *container, size_t index) : container(container), index(index){};
-    T *operator->() { return container != nullptr ? (&this->container->at(index)) : nullptr; }
-};
-
-template <typename T>
-using list = vector<ptr<T>>;
-
-template <typename T>
-ptr<T> yoink(vector<T> *vec)
-{
-    size_t index = vec->size();
-    vec->emplace_back();
-    return ptr<T>(vec, index);
-}
-
 // ERROR HANDLING //
 bool error_has_occoured = false;
 
@@ -50,7 +24,7 @@ enum class TokenKind
     ParenL,
     ParenR,
 
-    STRING,
+    String,
 
     InsertL,
     InsertR,
@@ -78,7 +52,7 @@ struct Token
                                                   line(line) {}
 };
 
-// LEXING //
+// LEXER //
 
 struct Lexer
 {
@@ -223,7 +197,7 @@ void next_token(Lexer &lexer)
                 if (n == '\0')
                     error(lexer, "Unterminated string at end of file");
             } while (n != '"');
-            make_token(lexer, TokenKind::STRING);
+            make_token(lexer, TokenKind::String);
             return;
         }
 
@@ -247,131 +221,26 @@ void next_token(Lexer &lexer)
     make_token(lexer, TokenKind::EndOfFile);
 }
 
-// PROGRAM MODEL //
+// COMPILER //
 
-// Expressions
-
-struct UnresolvedId
-{
-    Token identity;
-};
-
-struct ValueList
-{
-    vector<int> values;
-};
-
-enum class ExprKind
-{
-    Null,
-    UnresolvedId,
-    ValueList,
-};
-
-struct Expression
-{
-    ExprKind kind;
-    union
-    {
-        ptr<UnresolvedId> unresolved_id;
-        ptr<ValueList> value_list;
-    };
-    Expression() : kind(ExprKind::Null), unresolved_id() {}
-};
-
-void set_expression(ptr<Expression> expr, ptr<UnresolvedId> unresolved_id)
-{
-    expr->unresolved_id = unresolved_id;
-    expr->kind = ExprKind::UnresolvedId;
-}
-
-void set_expression(ptr<Expression> expr, ptr<ValueList> value_list)
-{
-    expr->value_list = value_list;
-    expr->kind = ExprKind::ValueList;
-}
-
-// Statements
-
-struct StmtInsert
-{
-    ptr<Expression> subject;
-    ptr<Expression> insert;
-    bool insert_at_end;
-};
-
-enum class StmtKind
-{
-    Null,
-    Expression,
-    Insert,
-};
-
-struct Statement
-{
-    StmtKind kind;
-    union
-    {
-        ptr<Expression> expr;
-        ptr<StmtInsert> insert;
-    };
-    Statement() : kind(StmtKind::Null), expr() {}
-};
-
-void set_statement(ptr<Statement> stmt, ptr<Expression> expr)
-{
-    stmt->expr = expr;
-    stmt->kind = StmtKind::Expression;
-}
-
-void set_statement(ptr<Statement> stmt, ptr<StmtInsert> insert)
-{
-    stmt->insert = insert;
-    stmt->kind = StmtKind::Insert;
-}
-
-// Program
-
-struct Scope
-{
-    ptr<Scope> parent;
-    list<Statement> statements;
-};
-
-struct Function
-{
-    Token identity;
-    ptr<Scope> scope;
-};
-
-struct Program
-{
-    vector<UnresolvedId> unresolved_ids;
-    vector<ValueList> value_lists;
-    vector<Expression> expressions;
-    vector<StmtInsert> stmt_inserts;
-    vector<Statement> statements;
-    vector<Scope> scopes;
-    vector<Function> functions;
-};
-
-// PARSING //
-
-struct Parser
+struct Compiler
 {
     Lexer *lexer;
-    Program *program;
+    std::ofstream out;
+    bool insert_stmt = false;
+    bool inserting_chars = false;
+    bool in_main = false;
 
-    Parser(Lexer *lexer, Program *program) : lexer(lexer), program{program} {}
+    Compiler(Lexer *lexer) : lexer(lexer) {}
 };
 
-void error(const Parser &parser, const string msg)
+void error(const Compiler &compiler, const string msg)
 {
     if (error_has_occoured)
         return;
     error_has_occoured = true;
 
-    Token current = parser.lexer->current;
+    Token current = compiler.lexer->current;
     cout << "Error on line " << current.line << ": " << msg;
     if (current.kind == TokenKind::Line)
         cout << " (got new line)";
@@ -380,318 +249,242 @@ void error(const Parser &parser, const string msg)
     cout << endl;
 }
 
-TokenKind peek(const Parser &parser)
+TokenKind peek(const Compiler &compiler)
 {
-    return parser.lexer->current.kind;
+    return compiler.lexer->current.kind;
 }
 
-TokenKind peek_next(const Parser &parser)
+TokenKind peek_next(const Compiler &compiler)
 {
-    return parser.lexer->next.kind;
+    return compiler.lexer->next.kind;
 }
 
-bool match(Parser &parser, TokenKind kind)
+bool match(Compiler &compiler, TokenKind kind)
 {
-    if (peek(parser) != kind)
+    if (peek(compiler) != kind)
         return false;
-    next_token(*parser.lexer);
+    next_token(*compiler.lexer);
     return true;
 }
 
-Token eat(Parser &parser, TokenKind kind, const string msg)
+Token eat(Compiler &compiler, TokenKind kind, const string msg)
 {
     if (kind != TokenKind::Line)
     {
-        while (match(parser, TokenKind::Line))
+        while (match(compiler, TokenKind::Line))
             ;
     }
 
-    Token t = parser.lexer->current;
-    if (!match(parser, kind))
-        error(parser, msg);
+    Token t = compiler.lexer->current;
+    if (!match(compiler, kind))
+        error(compiler, msg);
     return t;
 }
 
-bool peek_expression(const Parser &parser)
+void compile_identity(Compiler &compiler)
 {
-    return peek(parser) == TokenKind::Identity ||
-           peek(parser) == TokenKind::STRING;
+    Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
+    if (identity.str == "console")
+    {
+        compiler.out << "std::cout";
+
+        // FIXME: This should only occour if it happens in the first expression of the insert statement
+        if (compiler.insert_stmt)
+            compiler.inserting_chars = true;
+    }
+    else
+    {
+        cout << identity.str;
+    }
 }
 
-ptr<Expression> parse_expression(Parser &parser)
+void compile_list_literal(Compiler &compiler)
 {
-    ptr<Expression> expr = yoink(&parser.program->expressions);
-
-    if (peek(parser) == TokenKind::Identity)
+    vector<int> values;
+    if (peek(compiler) == TokenKind::String)
     {
-        ptr<UnresolvedId> unresolved_id = yoink(&parser.program->unresolved_ids);
-        unresolved_id->identity = eat(parser, TokenKind::Identity, "Expected identity.");
-        set_expression(expr, unresolved_id);
-    }
-    else if (peek(parser) == TokenKind::STRING)
-    {
-        ptr<ValueList> value_list = yoink(&parser.program->value_lists);
-
-        Token token = eat(parser, TokenKind::STRING, "Expected string.");
+        Token token = eat(compiler, TokenKind::String, "Expected string.");
         for (int i = 1; i <= token.str.length() - 2; i++)
-            value_list->values.push_back((int)token.str[i]);
-
-        set_expression(expr, value_list);
+            values.push_back((int)token.str[i]);
     }
     else
     {
-        error(parser, "Expected expression");
+        // TODO: Parse array literals
     }
 
-    return expr;
-}
-
-bool peek_statement(const Parser &parser)
-{
-    return peek_expression(parser);
-}
-
-void parse_statement(Parser &parser, ptr<Scope> scope)
-{
-    ptr<Statement> stmt = yoink(&parser.program->statements);
-    ptr<Expression> expr = parse_expression(parser);
-
-    if (peek(parser) == TokenKind::InsertL || peek(parser) == TokenKind::CurlyR)
+    if (compiler.inserting_chars)
     {
-        ptr<StmtInsert> insert = yoink(&parser.program->stmt_inserts);
-        insert->subject = expr;
-
-        if (match(parser, TokenKind::InsertL))
-            insert->insert_at_end = true;
-        else if (match(parser, TokenKind::InsertR))
-            insert->insert_at_end = false;
-        else
-            error(parser, "Expected insertion operator.");
-
-        insert->insert = parse_expression(parser);
-        set_statement(stmt, insert);
-    }
-    else
-    {
-        set_statement(stmt, expr);
-    }
-
-    scope->statements.push_back(stmt);
-}
-
-void parse_scope(Parser &parser, ptr<Scope> scope, ptr<Scope> parent)
-{
-    scope->parent = parent;
-
-    bool statement_block = match(parser, TokenKind::CurlyL);
-
-    if (statement_block)
-    {
-        while (match(parser, TokenKind::Line))
-            ;
-
-        while (peek_statement(parser))
-        {
-            parse_statement(parser, scope);
-            eat(parser, TokenKind::Line, "Expected newline to terminate statement");
-            while (match(parser, TokenKind::Line))
-                ;
-        }
-
-        // FIXME: Give the line number of the '{' we are trying to close
-        eat(parser, TokenKind::CurlyR, "Expected '}' to close block.");
-    }
-    else if (peek_statement(parser))
-    {
-        parse_statement(parser, scope);
-    }
-    else
-    {
-        error(parser, "Expected '{' to begin statement block.");
-    }
-}
-
-void parse_function(Parser &parser, Token identity)
-{
-    ptr<Function> funct = yoink(&parser.program->functions);
-    funct->scope = yoink(&parser.program->scopes);
-    funct->identity = identity;
-
-    eat(parser, TokenKind::ParenL, "Expected '(' after function name.");
-    // FIXME: Parse function parameters
-    eat(parser, TokenKind::ParenR, "Expected ')' at end of function arguments.");
-
-    parse_scope(parser, funct->scope, ptr<Scope>());
-}
-
-void parse_program(Parser &parser)
-{
-    while (peek(parser) == TokenKind::Identity)
-    {
-        Token identity = eat(parser, TokenKind::Identity, "Expected function or variable declaration.");
-        if (peek(parser) == TokenKind::ParenL)
-        {
-            parse_function(parser, identity);
-            continue;
-        }
-        error(parser, "Expected function or variable declaration.");
-    }
-
-    eat(parser, TokenKind::EndOfFile, "Expected end of file");
-}
-
-// GENERATE //
-
-struct Generator
-{
-    Program *program;
-    std::ofstream f;
-
-    bool insert_stmt = false;
-    bool inserting_chars = false;
-
-    Generator(Program *program) : program(program){};
-};
-
-// FIXME: We shouldn't actually be trying to generate unresolved ids. This is just a hack.
-void generate(Generator &generator, ptr<UnresolvedId> unresolved_id)
-{
-    if (unresolved_id->identity.str == "console")
-    {
-        generator.f << "std::cout";
-        if (generator.insert_stmt)
-            generator.inserting_chars = true;
-    }
-}
-
-void generate(Generator &generator, ptr<ValueList> value_list)
-{
-    if (generator.inserting_chars)
-    {
-        generator.f << '"';
+        compiler.out << '"';
 
         // FIXME: Generate correct results for special characters (e.g. tabs should become '\t')
-        for (size_t i = 0; i < value_list->values.size(); i++)
-            generator.f << (char)value_list->values.at(i);
+        for (size_t i = 0; i < values.size(); i++)
+            compiler.out << (char)values.at(i);
 
-        generator.f << '"';
+        compiler.out << '"';
     }
-    else if (generator.insert_stmt)
+    else if (compiler.insert_stmt)
     {
-        for (size_t i = 0; i < value_list->values.size(); i++)
+        for (size_t i = 0; i < values.size(); i++)
         {
             if (i > 0)
-                generator.f << "<<";
-            generator.f << value_list->values.at(i);
+                compiler.out << "<<";
+            compiler.out << values.at(i);
         }
     }
     else
     {
-        generator.f << '{';
+        compiler.out << '{';
 
-        for (size_t i = 0; i < value_list->values.size(); i++)
+        for (size_t i = 0; i < values.size(); i++)
         {
             if (i > 0)
-                generator.f << ',';
-            generator.f << value_list->values.at(i);
+                compiler.out << ',';
+            compiler.out << values.at(i);
         }
 
-        generator.f << '}';
+        compiler.out << '}';
     }
 }
 
-void generate(Generator &generator, ptr<Expression> expr)
+bool peek_expression(const Compiler &compiler)
 {
-    switch (expr->kind)
+    return peek(compiler) == TokenKind::Identity ||
+           peek(compiler) == TokenKind::String;
+}
+
+void compile_expression(Compiler &compiler)
+{
+    switch (peek(compiler))
     {
-    case ExprKind::UnresolvedId:
-        // FIXME: We shouldn't actually be trying to generate unresolved ids. This is just a hack.
-        generate(generator, expr->unresolved_id);
+    case TokenKind::Identity:
+        compile_identity(compiler);
         break;
 
-    case ExprKind::ValueList:
-        generate(generator, expr->value_list);
+    case TokenKind::String:
+        compile_list_literal(compiler);
         break;
 
     default:
-        cout << "Error. Unable to generate statement";
-        error_has_occoured = true;
+        error(compiler, "Expected expression");
         break;
     }
 }
 
-void generate(Generator &generator, ptr<StmtInsert> insert)
+bool peek_insert_stmt(const Compiler &compiler)
 {
-    generator.insert_stmt = true;
-    generator.inserting_chars = false;
-
-    // FIXME: Generate correct code when we are inserting to the front of the subject
-    generate(generator, insert->subject);
-    generator.f << "<<";
-    generate(generator, insert->insert);
-
-    generator.insert_stmt = false;
-}
-
-void generate(Generator &generator, ptr<Statement> stmt)
-{
-    switch (stmt->kind)
+    // FIXME: Hack solution until lexer is reworked to allow `peek_ahead(compiler, i)`
+    return true;
+    /*
+    TokenKind t;
+    size_t i = 0;
+    do
     {
-    case StmtKind::Expression:
-        generate(generator, stmt->expr);
-        break;
+        t = peek_ahead(compiler, i);
 
-    case StmtKind::Insert:
-        generate(generator, stmt->insert);
-        break;
+        if (t == TokenKind::InsertL || t == TokenKind::InsertR)
+            return true;
 
-    default:
-        cout << "Error. Unable to generate statement";
-        error_has_occoured = true;
-        break;
-    }
+        if (t == TokenKind::Line)
+            return false;
+
+        i++;
+    } while (t != TokenKind::EndOfFile);
+    return false;
+    */
 }
 
-void generate(Generator &generator, ptr<Scope> scope)
+void compile_insert_stmt(Compiler &compiler)
 {
-    for (size_t i = 0; i < scope->statements.size(); i++)
+    compiler.insert_stmt = true;
+    compiler.inserting_chars = false;
+    compile_expression(compiler);
+
+    eat(compiler, TokenKind::InsertL, "Expected << operator.");
+    compiler.out << "<<";
+
+    compile_expression(compiler);
+
+    while (match(compiler, TokenKind::InsertL))
     {
-        generate(generator, scope->statements.at(i));
-        generator.f << ";";
+        compiler.out << "<<";
+        compile_expression(compiler);
     }
+
+    compiler.insert_stmt = false;
 }
 
-void generate(Generator &generator, ptr<Function> funct)
+bool peek_statement(const Compiler &compiler)
 {
-    generator.f
-        << (funct->identity.str == "main" ? "int " : "void ")
-        << funct->identity.str
+    return peek_expression(compiler);
+}
+
+void compile_statement(Compiler &compiler)
+{
+    while (match(compiler, TokenKind::Line))
+        ;
+
+    if (peek_insert_stmt(compiler))
+        compile_insert_stmt(compiler);
+    else
+        compile_expression(compiler);
+
+    eat(compiler, TokenKind::Line, "Expected newline to terminate statement");
+}
+
+void compile_statement_block(Compiler &compiler)
+{
+    // FIXME: Give line numbers when eating '{' or '}' fails.
+    eat(compiler, TokenKind::CurlyL, "Expected '{' to open block.");
+    compiler.out << '{';
+
+    while (match(compiler, TokenKind::Line))
+        ;
+
+    while (peek_statement(compiler))
+    {
+        compile_statement(compiler);
+        compiler.out << ";";
+    }
+
+    if (compiler.in_main)
+        compiler.out << "return 0;";
+
+    eat(compiler, TokenKind::CurlyR, "Expected '}' to close block.");
+    compiler.out << '}';
+}
+
+void compile_function(Compiler &compiler)
+{
+    Token identity = eat(compiler, TokenKind::Identity, "Expected function name.");
+    compiler.in_main = identity.str == "main";
+
+    compiler.out
+        << (compiler.in_main ? "int " : "void ")
+        << identity.str
         << "(";
 
-    // TODO: Generate function arguments
-    generator.f << "){";
+    eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
+    // TODO: Parse and generate function parameters
+    eat(compiler, TokenKind::ParenR, "Expected ')' at end of function parameters.");
 
-    generate(generator, funct->scope);
-
-    if (funct->identity.str == "main")
-        generator.f << "return 0;";
-
-    generator.f << "}";
+    compiler.out << ")";
+    compile_statement_block(compiler);
+    compiler.in_main = false;
 }
 
-void generate_program(Generator &generator)
+void compile_program(Compiler &compiler)
 {
-    generator.f.open("local/output.cpp", std::ios::out);
+    compiler.out.open("local/output.cpp", std::ios::out);
 
-    generator.f << "#include <iostream>\n";
+    compiler.out << "#include <iostream>\n";
+    while (peek(compiler) == TokenKind::Identity)
+        compile_function(compiler);
 
-    for (size_t i = 0; i < generator.program->functions.size(); i++)
-        generate(generator, ptr<Function>(&generator.program->functions, i));
-
-    generator.f.close();
+    eat(compiler, TokenKind::EndOfFile, "Expected end of file");
+    compiler.out.close();
 }
 
-// COMPILE //
+// MAIN //
 
 int main(int argc, char *argv[])
 {
@@ -707,15 +500,12 @@ int main(int argc, char *argv[])
     std::string src((std::istreambuf_iterator<char>(src_file)), std::istreambuf_iterator<char>());
     src_file.close();
 
-    Program program;
     Lexer lexer(&src);
-    Parser parser(&lexer, &program);
-    Generator generator(&program);
+    Compiler compiler(&lexer);
 
     next_token(lexer);
     next_token(lexer);
-    parse_program(parser);
-    generate_program(generator);
+    compile_program(compiler);
 
     cout << "FINISH" << endl;
 
