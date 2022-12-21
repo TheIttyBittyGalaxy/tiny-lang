@@ -724,9 +724,9 @@ void compile_return_stmt(Compiler &compiler, Scope &scope)
         return_type = compile_expression(compiler, scope);
     }
 
-    if (compiler.function_returns == TinyType::Unspecified)
-        compiler.function_returns = return_type;
-    else if (compiler.function_returns != return_type)
+    if (compiler.in_function->function.return_type == TinyType::Unspecified)
+        compiler.in_function->function.return_type = return_type;
+    else if (compiler.in_function->function.return_type != return_type)
         error(compiler, "Incorrect return type");
 }
 
@@ -830,9 +830,9 @@ void compile_function(Compiler &compiler, Scope &scope)
 
     string identity = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     compiler.in_main = identity == "main";
-    compiler.function_returns = TinyType::Unspecified;
 
     Entity *fun = declare(scope, identity, EntityKind::Function);
+    fun->function.return_type = TinyType::Unspecified;
     compiler.in_function = fun;
 
     *compiler.out << fun->c_identity << "(";
@@ -854,8 +854,8 @@ void compile_function(Compiler &compiler, Scope &scope)
 
     compiler.out = parent_stream;
 
-    if (compiler.function_returns == TinyType::Unspecified)
-        compiler.function_returns = TinyType::None;
+    if (fun->function.return_type == TinyType::Unspecified)
+        fun->function.return_type = TinyType::None;
 
     // FIXME: Determine what the correct behaviour when generating the main function should actually be.
     *compiler.out
