@@ -481,14 +481,23 @@ TinyType compile_call(Compiler &compiler, Scope &scope)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     Entity *funct = fetch(&scope, id);
+    bool valid_function = true;
 
     if (funct == nullptr)
+    {
+        valid_function = false;
         error(compiler, "Function '" + id + "' does not exist.");
+    }
     else if (funct->kind != EntityKind::Function)
+    {
+        valid_function = false;
         error(compiler, "'" + id + "' is not a function.");
+    }
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
-    *compiler.out << funct->c_identity << "(";
+    *compiler.out
+        << (valid_function ? funct->c_identity : id)
+        << "(";
 
     if (peek_expression(compiler))
     {
@@ -503,7 +512,7 @@ TinyType compile_call(Compiler &compiler, Scope &scope)
     eat(compiler, TokenKind::ParenR, "Expected ')' after function arguments.");
     *compiler.out << ")";
 
-    return funct->function.return_type;
+    return valid_function ? funct->function.return_type : TinyType::Unspecified;
 }
 
 TinyType compile_list_literal(Compiler &compiler)
