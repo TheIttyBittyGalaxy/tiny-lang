@@ -334,7 +334,7 @@ Entity *declare(Scope &scope, string id, EntityKind kind)
     {
         dec.variable.type = TinyType::Unspecified;
     }
-    else if (kind == EntityKind::Variable)
+    else if (kind == EntityKind::Function)
     {
         dec.function.return_type = TinyType::Unspecified;
     }
