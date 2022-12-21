@@ -274,6 +274,24 @@ enum class TinyType
     None,
 };
 
+string tiny_type_as_c_type(TinyType type)
+{
+    switch (type)
+    {
+    case TinyType::Unspecified:
+        return "_ERROR_UNSPECIFIED_TYPE";
+    case TinyType::Value:
+        return "value";
+    case TinyType::List:
+        return "list";
+    case TinyType::Console:
+        return "_ERROR_CONSOLE_TYPE";
+    case TinyType::None:
+        return "void";
+    }
+    return "_ERROR_TINY_TYPE_AS_C_TYPE";
+}
+
 enum class EntityKind
 {
     Null,
@@ -797,7 +815,8 @@ void compile_parameter(Compiler &compiler, Scope &scope)
     }
 
     *compiler.out
-        << (param->variable.type == TinyType::Value ? "value " : "list ")
+        << tiny_type_as_c_type(param->variable.type)
+        << " "
         << param->c_identity;
 }
 
@@ -838,30 +857,11 @@ void compile_function(Compiler &compiler, Scope &scope)
     if (compiler.function_returns == TinyType::Unspecified)
         compiler.function_returns = TinyType::None;
 
-    if (compiler.in_main)
-    {
-        // FIXME: Determine what the correct behaviour here should actually be.
-        *compiler.out << "int ";
-    }
-    else
-    {
-        switch (compiler.function_returns)
-        {
-        case TinyType::None:
-            *compiler.out << "void ";
-            break;
-        case TinyType::Value:
-            *compiler.out << "value ";
-            break;
-        case TinyType::List:
-            *compiler.out << "list ";
-            break;
-        default:
-            error(compiler, "Unable to generate C++ function return type.");
-            break;
-        }
-    }
-    *compiler.out << function_body.rdbuf();
+    // FIXME: Determine what the correct behaviour when generating the main function should actually be.
+    *compiler.out
+        << (compiler.in_main ? "int" : tiny_type_as_c_type(fun->function.return_type))
+        << " "
+        << function_body.rdbuf();
 }
 
 void compile_program(Compiler &compiler)
