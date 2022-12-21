@@ -285,7 +285,8 @@ enum class EntityKind
 struct Entity
 {
     EntityKind kind = EntityKind::Null;
-    string identity = "UNDEFINED";
+    string identity = "";
+    string c_identity = "_ERROR_NULL_ENTITY";
     union
     {
         struct
@@ -325,6 +326,8 @@ Entity *declare(Scope &scope, string id, EntityKind kind)
     Entity dec;
 
     dec.identity = id;
+    // FIXME: Find a proper policy for generating the C++ identifiers that won't clash
+    dec.c_identity = id == "main" ? id : id + "_";
     dec.kind = kind;
 
     if (kind == EntityKind::Variable)
@@ -458,7 +461,7 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
         {
             dec = declare(scope, id, EntityKind::Variable);
             dec->variable.type = TinyType::Value;
-            *compiler.out_statement_block << "value " << id << ";";
+            *compiler.out_statement_block << "value " << dec->c_identity << ";";
         }
         else if (dec->kind == EntityKind::Function)
         {
@@ -466,7 +469,7 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
             error(compiler, "Cannot use function as an expression.");
         }
 
-        *compiler.out << id;
+        *compiler.out << dec->c_identity;
 
         return valid_variable ? dec->variable.type : TinyType::Unspecified;
     }
@@ -485,7 +488,7 @@ TinyType compile_call(Compiler &compiler, Scope &scope)
         error(compiler, "'" + id + "' is not a function.");
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
-    *compiler.out << id << "(";
+    *compiler.out << funct->c_identity << "(";
 
     if (peek_expression(compiler))
     {
@@ -644,7 +647,7 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
     if (!already_existed)
         *compiler.out << (dec->variable.type == TinyType::Value ? "value " : "list ");
 
-    *compiler.out << id;
+    *compiler.out << dec->c_identity;
 }
 
 void compile_ltr_insert_stmt(Compiler &compiler, Scope &scope)
@@ -769,7 +772,7 @@ void compile_parameter(Compiler &compiler, Scope &scope)
 
     *compiler.out
         << (var->variable.type == TinyType::Value ? "value " : "list ")
-        << id;
+        << var->c_identity;
 }
 
 void compile_function(Compiler &compiler, Scope &scope)
@@ -785,7 +788,7 @@ void compile_function(Compiler &compiler, Scope &scope)
     Entity *fun = declare(scope, identity, EntityKind::Function);
     compiler.in_function = fun;
 
-    *compiler.out << identity << "(";
+    *compiler.out << fun->c_identity << "(";
 
     eat(compiler, TokenKind::ParenL, "Expected '(' after function name.");
     if (peek(compiler) == TokenKind::Identity)
