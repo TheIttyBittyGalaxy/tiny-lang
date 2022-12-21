@@ -301,42 +301,50 @@ enum class EntityKind
 
 struct Entity
 {
-    struct Variable
-    {
-        TinyType type = TinyType::Unspecified;
-    };
-
-    struct Function
-    {
-        TinyType return_type = TinyType::Unspecified;
-    };
-
     EntityKind kind = EntityKind::Null;
     string identity = "";
     string c_identity = "_ERROR_NULL_ENTITY";
     union
     {
-        Variable variable;
-        Function function;
+        struct
+        {
+            TinyType type;
+        } variable;
+        struct
+        {
+            TinyType return_type;
+        } function;
     };
 
     Entity(){};
 
-    Entity(EntityKind kind) : kind(kind)
+    Entity(EntityKind kind, string identity) : kind(kind), identity(identity)
     {
         if (kind == EntityKind::Variable)
-            variable = Variable();
+        {
+            variable.type = TinyType::Unspecified;
+        }
         else if (kind == EntityKind::Function)
-            function = Function();
+        {
+            function.return_type = TinyType::Unspecified;
+        }
     }
 
-    ~Entity()
+    ~Entity() {}
+
+    Entity(Entity &&source)
     {
-        if (kind == EntityKind::Variable)
-            variable.~Variable();
-        else if (kind == EntityKind::Function)
-            function.~Function();
-    };
+        kind = source.kind;
+        identity = source.identity;
+        c_identity = source.c_identity;
+
+        if (source.kind == EntityKind::Variable)
+            variable = source.variable;
+        else if (source.kind == EntityKind::Function)
+            function = source.function;
+
+        source.kind = EntityKind::Null;
+    }
 };
 
 struct Scope
@@ -362,13 +370,13 @@ Entity *fetch(Scope *scope, string id)
 
 Entity *declare(Scope &scope, EntityKind kind, string id)
 {
-    Entity dec(kind);
-    dec.identity = id;
-    // FIXME: Find a proper policy for generating the C++ identifiers that won't clash
-    dec.c_identity = id == "main" ? id : id + "_";
+    scope.entities.insert({id, Entity(kind, id)});
+    Entity *ent = &scope.entities[id];
 
-    scope.entities[id] = dec;
-    return &scope.entities[id];
+    // FIXME: Find a proper policy for generating the C++ identifiers that won't clash
+    ent->c_identity = id == "main" ? id : id + "_";
+
+    return ent;
 }
 
 // COMPILER //
