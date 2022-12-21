@@ -380,9 +380,6 @@ void compile_expression(Compiler &compiler)
 
 bool peek_insert_stmt(const Compiler &compiler)
 {
-    // FIXME: Hack solution until lexer is reworked to allow `peek_ahead(compiler, i)`
-    return true;
-    /*
     TokenKind t;
     size_t i = 0;
     do
@@ -398,7 +395,6 @@ bool peek_insert_stmt(const Compiler &compiler)
         i++;
     } while (t != TokenKind::EndOfFile);
     return false;
-    */
 }
 
 void compile_insert_stmt(Compiler &compiler)
