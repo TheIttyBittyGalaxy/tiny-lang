@@ -698,8 +698,8 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
 
     if (match(compiler, TokenKind::Assign))
     {
-        // FIXME: Implement variable assignment
-        error(compiler, "Variable assignment not yet implemented.");
+        *compiler.out << dec->c_identity << "=";
+        compile_expression(compiler, scope, dec->variable.type);
     }
 
     if (dec->variable.type == TinyType::Unspecified)

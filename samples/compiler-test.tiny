@@ -1,5 +1,5 @@
 reverse(list[]) {
-    reversed[]
+    reversed[] = list
     return reversed
 }
 
