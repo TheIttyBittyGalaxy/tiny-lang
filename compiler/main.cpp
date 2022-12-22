@@ -704,8 +704,6 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
 
     if (dec->variable.type == TinyType::Unspecified)
         dec->variable.type = TinyType::Value;
-
-    *compiler.out << dec->c_identity;
 }
 
 void compile_ltr_insert_stmt(Compiler &compiler, Scope &scope)
@@ -771,7 +769,7 @@ void compile_return_stmt(Compiler &compiler, Scope &scope)
         error(compiler, "Incorrect return type");
 }
 
-void compile_statement(Compiler &compiler, Scope &scope)
+void compile_statement(Compiler &compiler, Scope &scope, bool semi_colon = true)
 {
     skip_lines(compiler);
 
@@ -793,7 +791,8 @@ void compile_statement(Compiler &compiler, Scope &scope)
     eat(compiler, TokenKind::Line, "Expected newline to terminate statement");
 
     compiler.out = parent_stream;
-    *compiler.out << statement.rdbuf();
+    if (statement.rdbuf()->in_avail())
+        *compiler.out << statement.rdbuf() << (semi_colon ? ";" : " ");
 }
 
 void compile_statement_block(Compiler &compiler, Scope &scope)
@@ -811,10 +810,7 @@ void compile_statement_block(Compiler &compiler, Scope &scope)
     compiler.out = &block_body;
 
     while (peek_statement(compiler))
-    {
         compile_statement(compiler, block_scope);
-        *compiler.out << ";";
-    }
 
     if (compiler.in_main)
         *compiler.out << "return 0;";
