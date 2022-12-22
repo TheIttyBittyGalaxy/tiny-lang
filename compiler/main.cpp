@@ -313,6 +313,8 @@ struct Entity
         struct
         {
             TinyType return_type;
+            vector<Entity *> *params;
+            size_t param_count;
         } function;
     };
 
@@ -327,10 +329,18 @@ struct Entity
         else if (kind == EntityKind::Function)
         {
             function.return_type = TinyType::Unspecified;
+            function.params = new vector<Entity *>;
+            function.param_count = 0;
         }
     }
 
-    ~Entity() {}
+    ~Entity()
+    {
+        if (kind == EntityKind::Function)
+        {
+            delete function.params;
+        }
+    }
 
     Entity(Entity &&source)
     {
@@ -470,9 +480,9 @@ bool peek_expression(const Compiler &compiler)
            peek(compiler) == TokenKind::Identity;
 }
 
-TinyType compile_expression(Compiler &compiler, Scope &scope);
+TinyType compile_expression(Compiler &compiler, Scope &scope, TinyType type_hint = TinyType::Unspecified);
 
-TinyType compile_identity(Compiler &compiler, Scope &scope)
+TinyType compile_identity(Compiler &compiler, Scope &scope, TinyType type_hint = TinyType::Unspecified)
 {
     Token identity = eat(compiler, TokenKind::Identity, "Expected identity.");
     // FIXME: Have a console variable declared in the global scope
@@ -495,6 +505,7 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
         if (dec == nullptr)
         {
             dec = declare(scope, EntityKind::Variable, id);
+            dec->variable.type = type_hint;
         }
         else if (dec->kind == EntityKind::Function)
         {
@@ -510,7 +521,7 @@ TinyType compile_identity(Compiler &compiler, Scope &scope)
     return TinyType::Unspecified;
 }
 
-TinyType compile_call(Compiler &compiler, Scope &scope)
+TinyType compile_call(Compiler &compiler, Scope &scope, TinyType type_hint = TinyType::Unspecified)
 {
     string id = eat(compiler, TokenKind::Identity, "Expected function name.").str;
     Entity *funct = fetch(&scope, id);
@@ -534,11 +545,19 @@ TinyType compile_call(Compiler &compiler, Scope &scope)
 
     if (peek_expression(compiler))
     {
-        compile_expression(compiler, scope);
+        size_t i = 0;
+        TinyType param_type = compiler.in_function->function.param_count > 0
+                                  ? compiler.in_function->function.params->at(0)->variable.type
+                                  : TinyType::Unspecified;
+        compile_expression(compiler, scope, param_type);
         while (match(compiler, TokenKind::Comma))
         {
+            i++;
             *compiler.out << ",";
-            compile_expression(compiler, scope);
+            param_type = compiler.in_function->function.param_count > i
+                             ? compiler.in_function->function.params->at(i)->variable.type
+                             : TinyType::Unspecified;
+            compile_expression(compiler, scope, param_type);
         }
     }
 
@@ -598,14 +617,14 @@ TinyType compile_list_literal(Compiler &compiler)
     return TinyType::List;
 }
 
-TinyType compile_expression(Compiler &compiler, Scope &scope)
+TinyType compile_expression(Compiler &compiler, Scope &scope, TinyType type_hint)
 {
     if (peek_call(compiler))
-        return compile_call(compiler, scope);
+        return compile_call(compiler, scope, type_hint);
     else if (peek(compiler) == TokenKind::String)
         return compile_list_literal(compiler);
     else if (peek(compiler) == TokenKind::Identity)
-        return compile_identity(compiler, scope);
+        return compile_identity(compiler, scope, type_hint);
     else
         error(compiler, "Expected expression");
 
@@ -691,6 +710,8 @@ void compile_assign_stmt(Compiler &compiler, Scope &scope)
 
 void compile_ltr_insert_stmt(Compiler &compiler, Scope &scope)
 {
+    // FIXME: Supply type hints to compile_expression calls
+
     compiler.insert_stmt = true;
     compiler.inserting_ltr = true;
     compiler.inserting_chars = false;
@@ -715,17 +736,19 @@ void compile_rtl_insert_stmt(Compiler &compiler, Scope &scope)
     compiler.insert_stmt = true;
     compiler.inserting_ltr = false;
     compiler.inserting_chars = false;
-    compile_expression(compiler, scope);
+
+    TinyType target_type = compile_expression(compiler, scope, TinyType::List);
+    TinyType operand_hint = target_type == TinyType::Value ? TinyType::List : TinyType::Unspecified;
 
     eat(compiler, TokenKind::InsertL, "Expected << operator.");
     *compiler.out << "<<";
 
-    compile_expression(compiler, scope);
+    compile_expression(compiler, scope, operand_hint);
 
     while (match(compiler, TokenKind::InsertL))
     {
         *compiler.out << "<<";
-        compile_expression(compiler, scope);
+        compile_expression(compiler, scope, operand_hint);
     }
 
     compiler.insert_stmt = false;
@@ -739,7 +762,7 @@ void compile_return_stmt(Compiler &compiler, Scope &scope)
     if (peek_expression(compiler))
     {
         *compiler.out << " ";
-        return_type = compile_expression(compiler, scope);
+        return_type = compile_expression(compiler, scope, compiler.in_function->function.return_type);
     }
 
     if (compiler.in_function->function.return_type == TinyType::Unspecified)
@@ -831,6 +854,9 @@ void compile_parameter(Compiler &compiler, Scope &scope)
         eat(compiler, TokenKind::SquareR, "Expected ']'");
         param->variable.type = TinyType::List;
     }
+
+    compiler.in_function->function.params->push_back(param);
+    compiler.in_function->function.param_count++;
 
     *compiler.out
         << tiny_type_as_c_type(param->variable.type)
